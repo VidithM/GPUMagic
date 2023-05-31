@@ -18,7 +18,7 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
-#define N 7000
+#define N 2000
 #define eps 1e-6
 #define tol 1e-5
 
