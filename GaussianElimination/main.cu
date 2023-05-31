@@ -18,11 +18,14 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 	}
 }
 
-#define N 2000
+#define N 7000
 #define eps 1e-6
+#define tol 1e-5
+
+#define THREADS_PER_BLOCK 512
 
 
-__global__ void daxpyKernel(double *a, double *mat, double *query, int *j)
+__global__ void daxpyKernel(double* a, double* mat, double* query, int* j)
 {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N * N) {
@@ -62,7 +65,7 @@ __global__ void swapRowsKernel(double* x, double* y, double* qx, double* qy) {
 For now, doing with a single thread (need kernel since need access to device matrix)
 TODO: Figure out how to parallelize
 */
-__global__ void findSwapRowKernel(double* mat, int *j, int* ans) {
+__global__ void findSwapRowKernel(double* mat, int* j, int* ans) {
 	for (int i = *j; i < N; i++) {
 		if (fabs(mat[i * N + *j]) > eps) {
 			*ans = i;
@@ -76,7 +79,7 @@ __global__ void findSwapRowKernel(double* mat, int *j, int* ans) {
 * Collects all coefficients needed for daxpy computations on a column.
 * Performed after row swap.
 */
-__global__ void collectCoeffsKernel(double* mat, double* out, int *j) {
+__global__ void collectCoeffsKernel(double* mat, double* out, int* j) {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N) {
 		return;
@@ -108,9 +111,9 @@ void serialBenchmark() {
 }
 
 int main() {
-	double** mat, *d_mat;
+	double** mat, * d_mat;
 	// we will solve Ax = b, where A = mat, b = query
-	double* query, *query_orig, *d_query;
+	double* query, * query_orig, * d_query;
 	// allocate host matrix
 	mat = (double**)malloc(N * sizeof(double*));
 	// allocate device matrix
@@ -176,17 +179,19 @@ int main() {
 			exit(0);
 		}
 		if (targ != j) {
-			swapRowsKernel <<<10, 256>>> (d_mat + targ * N, d_mat + j * N, d_query + targ, d_query + j);
+			swapRowsKernel << <(N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat + targ * N, d_mat + j * N, d_query + targ, d_query + j);
 			CU_TRY(cudaPeekAtLastError());
 			CU_TRY(cudaDeviceSynchronize());
 		}
-		collectCoeffsKernel << <10, 256 >> > (d_mat, daxpy_coeffs, curr_col);
+		collectCoeffsKernel << < (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat, daxpy_coeffs, curr_col);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
 		// double* daxpy_raw = (double*)malloc(N * sizeof(double));
 		// CU_TRY(cudaMemcpy(daxpy_raw, daxpy_coeffs, N * sizeof(double), cudaMemcpyDeviceToHost));
-		
-		daxpyKernel << <20000, 256 >> > (daxpy_coeffs, d_mat, d_query, curr_col);
+		if ((j & 127) == 0) {
+			printf("%d\n", j);
+		}
+		daxpyKernel << <(N * N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (daxpy_coeffs, d_mat, d_query, curr_col);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
 	}
@@ -219,15 +224,17 @@ int main() {
 	CU_TRY(cudaEventElapsedTime(&millis, start, end));
 	printf("Runtime (ms): %0.3f\n", millis);
 
+	double mx_error = 0;
 	for (int i = 0; i < N; i++) {
 		double sum = 0;
 		for (int j = 0; j < N; j++) {
 			sum += mat[i][j] * result[j];
 		}
-		if (fabs(query_orig[i] - sum) > eps) {
-			printf("[ERROR]: Produced solution is incorrect\n");
-			exit(0);
-		}
+		mx_error = std::max(mx_error, fabs(query_orig[i] - sum));
+	}
+	if (mx_error > tol) {
+		printf("[ERROR]: Produced solution is incorrect w/ residual %0.8f\n", mx_error);
+		exit(0);
 	}
 	printf("Verification passed.\n");
 #ifdef dbg
