@@ -8,21 +8,43 @@
 #include <random>
 #include <cassert>
 
-#define CU_TRY(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
-{
-	if (code != cudaSuccess)
-	{
-		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-		if (abort) exit(code);
-	}
-}
-
-#define N 2000
+#define N 5000
 #define eps 1e-6
 #define tol 1e-5
+// #define dbg
 
 #define THREADS_PER_BLOCK 512
+
+#define FREE_ALL					\
+{									\
+	cudaFree((void*)d_mat);			\
+	cudaFree((void*)d_query);		\
+	cudaFree((void*)non_zero_row);	\
+	cudaFree((void*)curr_col);		\
+									\
+	for (int i = 0; i < N; i++) {	\
+		free((void*)mat[i]);		\
+	}								\
+									\
+	free((void*)mat);				\
+	free((void*)reduced);			\
+	free((void*)result);			\
+}									\
+
+#define CU_TRY(ans)						\
+{										\
+	if (ans != cudaSuccess) {			\
+		fprintf(						\
+			stderr,						\
+			"GPUassert: %s %s %d\n",	\
+			cudaGetErrorString(ans),	\
+			__FILE__,					\
+			__LINE__					\
+		);								\
+		FREE_ALL;						\
+		if (abort) exit(ans);			\
+	}									\
+}										\
 
 
 __global__ void daxpyKernel(double* a, double* mat, double* query, int* j)
@@ -35,6 +57,7 @@ __global__ void daxpyKernel(double* a, double* mat, double* query, int* j)
 	if (row <= *j) {
 		return;
 	}
+	// printf("%d %d\n", row, tid % N);
 	int dif = row - *j;
 	mat[tid] -= (a[row]) * mat[tid - dif * N];
 
@@ -111,9 +134,18 @@ void serialBenchmark() {
 }
 
 int main() {
+	// host and device matrices (host matrix stores the original matrix, d_mat will become the reduced matrix)
 	double** mat, * d_mat;
 	// we will solve Ax = b, where A = mat, b = query
-	double* query, * query_orig, * d_query;
+	double* query, *query_orig, *d_query;
+
+	int* non_zero_row;		// first non-zero row; used for row swap step
+	int* curr_col;			// current column used for kernel computations
+	double* daxpy_coeffs;   // row scalars needed for daxpy step; computed after row swap
+
+	double* reduced;		// reduced matrix copied to host
+	double* result;			// resulting solution computed on host
+
 	// allocate host matrix
 	mat = (double**)malloc(N * sizeof(double*));
 	// allocate device matrix
@@ -145,15 +177,10 @@ int main() {
 		CU_TRY(cudaMemcpy((void*)(d_mat + (i * N)), (void*)mat[i], N * sizeof(double), cudaMemcpyHostToDevice));
 	}
 
-	double* daxpy_coeffs;
-	CU_TRY(cudaMalloc((void**)(&daxpy_coeffs), N * sizeof(double)));
-
-	int* non_zero_row;	// first non-zero row; used for row swap step
-	int* curr_col;		// current column used for kernel computations
-
 	// allocate result variables on device
 	CU_TRY(cudaMalloc((void**)(&non_zero_row), sizeof(int)));
 	CU_TRY(cudaMalloc((void**)(&curr_col), sizeof(int)));
+	CU_TRY(cudaMalloc((void**)(&daxpy_coeffs), N * sizeof(double)));
 
 	cudaEvent_t start, end;
 	CU_TRY(cudaEventCreate(&start));
@@ -167,7 +194,6 @@ int main() {
 		// memcpy column into device memory
 		CU_TRY(cudaMemcpy(curr_col, &j, sizeof(int), cudaMemcpyHostToDevice));
 
-		// need to parallelize this later; read comments on kernel
 		findSwapRowKernel << <1, 1 >> > (d_mat, curr_col, non_zero_row);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
@@ -175,10 +201,13 @@ int main() {
 		int targ;
 		CU_TRY(cudaMemcpy(&targ, non_zero_row, sizeof(int), cudaMemcpyDeviceToHost));
 		if (targ == -1) {
+			// no row with non-zero entry was found
 			printf("[ERROR]: Matrix is non-invertible!\n");
+			FREE_ALL;
 			exit(0);
 		}
 		if (targ != j) {
+			// only swap if found row != j
 			swapRowsKernel << <(N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat + targ * N, d_mat + j * N, d_query + targ, d_query + j);
 			CU_TRY(cudaPeekAtLastError());
 			CU_TRY(cudaDeviceSynchronize());
@@ -186,8 +215,7 @@ int main() {
 		collectCoeffsKernel << < (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat, daxpy_coeffs, curr_col);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
-		// double* daxpy_raw = (double*)malloc(N * sizeof(double));
-		// CU_TRY(cudaMemcpy(daxpy_raw, daxpy_coeffs, N * sizeof(double), cudaMemcpyDeviceToHost));
+
 		if ((j & 127) == 0) {
 			printf("%d\n", j);
 		}
@@ -195,15 +223,12 @@ int main() {
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
 	}
-	double* reduced = (double*)malloc(N * N * sizeof(double));
+	reduced = (double*)malloc(N * N * sizeof(double));
 	CU_TRY(cudaMemcpy(reduced, d_mat, N * N * sizeof(double), cudaMemcpyDeviceToHost));
 
-	double* result = (double*)malloc(N * sizeof(double));
-	CU_TRY(cudaMemcpy(query, d_query, N * sizeof(double), cudaMemcpyDeviceToHost));
+	result = (double*)malloc(N * sizeof(double));
 
-	// final solving step is serial for now.
-	// parallelization idea: one block per row, and some threads responsible for subtraction step
-	// use __syncthreads() for barrier to wait for all subtraction threads to finish, then do division
+	CU_TRY(cudaMemcpy(query, d_query, N * sizeof(double), cudaMemcpyDeviceToHost));
 
 	for (int i = N - 1; i >= 0; i--) {
 		double sum = 0;
@@ -230,14 +255,22 @@ int main() {
 		for (int j = 0; j < N; j++) {
 			sum += mat[i][j] * result[j];
 		}
+		if (sum != sum) {
+			// sum is NaN, something went wrong
+			printf("[ERROR]: Obtained NaN value when solving\n");
+			FREE_ALL;
+			exit(0); 
+		}
 		mx_error = std::max(mx_error, fabs(query_orig[i] - sum));
 	}
 	if (mx_error > tol) {
 		printf("[ERROR]: Produced solution is incorrect w/ residual %0.8f\n", mx_error);
+		FREE_ALL;
 		exit(0);
 	}
 	printf("Verification passed.\n");
 #ifdef dbg
 	pr(mat);
 #endif
+	FREE_ALL;
 }
