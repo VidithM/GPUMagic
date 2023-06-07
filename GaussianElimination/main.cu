@@ -8,46 +8,48 @@
 #include <random>
 #include <cassert>
 
-#define N 5000
+#define N 2000
 #define eps 1e-6
 #define tol 1e-5
-// #define dbg
+
+// #define DBG
+#define SHOW_PROGRESS
 
 #define THREADS_PER_BLOCK 512
 
-#define FREE_ALL					\
+#define FREE_ALL							\
 {									\
-	cudaFree((void*)d_mat);			\
-	cudaFree((void*)d_query);		\
-	cudaFree((void*)non_zero_row);	\
-	cudaFree((void*)curr_col);		\
+	cudaFree((void*)d_mat);						\
+	cudaFree((void*)d_query);					\
+	cudaFree((void*)non_zero_row);					\
+	cudaFree((void*)curr_col);					\
 									\
-	for (int i = 0; i < N; i++) {	\
-		free((void*)mat[i]);		\
+	for (int i = 0; i < N; i++) {					\
+		free((void*)mat[i]);					\
 	}								\
 									\
-	free((void*)mat);				\
-	free((void*)reduced);			\
-	free((void*)result);			\
+	free((void*)mat);						\
+	free((void*)reduced);						\
+	free((void*)result);						\
 }									\
 
-#define CU_TRY(ans)						\
-{										\
-	if (ans != cudaSuccess) {			\
+#define CU_TRY(ans)							\
+{									\
+	if (ans != cudaSuccess) {					\
 		fprintf(						\
 			stderr,						\
-			"GPUassert: %s %s %d\n",	\
-			cudaGetErrorString(ans),	\
+			"GPUassert: %s %s %d\n",			\
+			cudaGetErrorString(ans),			\
 			__FILE__,					\
 			__LINE__					\
-		);								\
+		);							\
 		FREE_ALL;						\
-		if (abort) exit(ans);			\
-	}									\
-}										\
+		if (abort) exit(ans);					\
+	}								\
+}									\
 
 
-__global__ void daxpyKernel(double* a, double* mat, double* query, int* j)
+__global__ void daxpyKernel(double *mat, double *query, double *a, int *j)
 {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N * N) {
@@ -68,7 +70,7 @@ __global__ void daxpyKernel(double* a, double* mat, double* query, int* j)
 }
 
 
-__global__ void swapRowsKernel(double* x, double* y, double* qx, double* qy) {
+__global__ void swapRowsKernel(double *x, double *y, double *qx, double *qy) {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N) {
 		return;
@@ -88,7 +90,7 @@ __global__ void swapRowsKernel(double* x, double* y, double* qx, double* qy) {
 For now, doing with a single thread (need kernel since need access to device matrix)
 TODO: Figure out how to parallelize
 */
-__global__ void findSwapRowKernel(double* mat, int* j, int* ans) {
+__global__ void findSwapRowKernel(double *mat, int *j, int *ans) {
 	for (int i = *j; i < N; i++) {
 		if (fabs(mat[i * N + *j]) > eps) {
 			*ans = i;
@@ -102,7 +104,7 @@ __global__ void findSwapRowKernel(double* mat, int* j, int* ans) {
 * Collects all coefficients needed for daxpy computations on a column.
 * Performed after row swap.
 */
-__global__ void collectCoeffsKernel(double* mat, double* out, int* j) {
+__global__ void collectCoeffsKernel(double *mat, double *out, int *j) {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N) {
 		return;
@@ -119,42 +121,42 @@ void pr(double** mat) {
 	}
 }
 
-void pr(double* vec) {
+void pr(double *vec) {
 	printf("Printng vector of length: %d\n", N);
 	for (int i = 0; i < N; i++) {
 		printf("(%d): %0.3f\n", i, vec[i]);
 	}
 }
 
-/*
-* Serial implementation provided by: ...
-*/
-void serialBenchmark() {
+// host and device matrices (host matrix stores the original matrix, d_mat will become the reduced matrix)
+double** mat, * d_mat;
+// we will solve Ax = b, where A = mat, b = query
+double* query, * query_orig, * d_query;
 
-}
+int* non_zero_row;		// first non-zero row; used for row swap step
+int* curr_col;			// current column used for kernel computations
+double* daxpy_coeffs;   	// row scalars needed for daxpy step; computed after row swap
+
+double* reduced;		// reduced matrix copied to host
+double* result;			// resulting solution computed on host
+
+/*
+* Serial implementation provided by ...
+* 
+*/
+void serialBenchmark(double **a, double *ans) {}
 
 int main() {
-	// host and device matrices (host matrix stores the original matrix, d_mat will become the reduced matrix)
-	double** mat, * d_mat;
-	// we will solve Ax = b, where A = mat, b = query
-	double* query, *query_orig, *d_query;
-
-	int* non_zero_row;		// first non-zero row; used for row swap step
-	int* curr_col;			// current column used for kernel computations
-	double* daxpy_coeffs;   // row scalars needed for daxpy step; computed after row swap
-
-	double* reduced;		// reduced matrix copied to host
-	double* result;			// resulting solution computed on host
 
 	// allocate host matrix
 	mat = (double**)malloc(N * sizeof(double*));
 	// allocate device matrix
 	CU_TRY(cudaMalloc((void**)(&d_mat), N * N * sizeof(double)));
-	// allocate device query vector
-	CU_TRY(cudaMalloc((void**)(&d_query), N * sizeof(double)));
 	// allocate host query vector
 	query = (double*)malloc(N * sizeof(double));
 	query_orig = (double*)malloc(N * sizeof(double));
+	// allocate device query vector
+	CU_TRY(cudaMalloc((void**)(&d_query), N * sizeof(double)));
 	// allocate rows of host matrix
 	for (int i = 0; i < N; i++) {
 		mat[i] = (double*)malloc(N * sizeof(double));
@@ -194,6 +196,7 @@ int main() {
 		// memcpy column into device memory
 		CU_TRY(cudaMemcpy(curr_col, &j, sizeof(int), cudaMemcpyHostToDevice));
 
+		// find first non-zero row
 		findSwapRowKernel << <1, 1 >> > (d_mat, curr_col, non_zero_row);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
@@ -212,24 +215,40 @@ int main() {
 			CU_TRY(cudaPeekAtLastError());
 			CU_TRY(cudaDeviceSynchronize());
 		}
+		// collect daxpy coefficients for the jth column
 		collectCoeffsKernel << < (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat, daxpy_coeffs, curr_col);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
-
-		if ((j & 127) == 0) {
-			printf("%d\n", j);
-		}
-		daxpyKernel << <(N * N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (daxpy_coeffs, d_mat, d_query, curr_col);
+		
+		// perform daxpy step
+		daxpyKernel << <(N * N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat, d_query, daxpy_coeffs, curr_col);
 		CU_TRY(cudaPeekAtLastError());
 		CU_TRY(cudaDeviceSynchronize());
+
+#ifdef SHOW_PROGRESS
+		if ((j & 127) == 0) {
+			// for progress checking
+			printf("[%0.3f%%] complete\n", j * 100.0 / N);
+		}
+#endif
 	}
 	reduced = (double*)malloc(N * N * sizeof(double));
+	// copy reduced matrix from device to host
 	CU_TRY(cudaMemcpy(reduced, d_mat, N * N * sizeof(double), cudaMemcpyDeviceToHost));
 
+	if (fabs(reduced[(N - 1) * N + (N - 1)]) < eps) {
+		// last row is all zeroes; non-invertible
+		printf("[ERROR]: Matrix is non-invertible!\n");
+		FREE_ALL;
+		exit(0);
+	}
+	
 	result = (double*)malloc(N * sizeof(double));
-
+	
+	// copy reduced query vector to host
 	CU_TRY(cudaMemcpy(query, d_query, N * sizeof(double), cudaMemcpyDeviceToHost));
 
+	// solve for result
 	for (int i = N - 1; i >= 0; i--) {
 		double sum = 0;
 		for (int j = N - 1; j > i; j--) {
@@ -238,17 +257,19 @@ int main() {
 		double rem = query[i] - sum;
 		result[i] = rem / reduced[i * N + i];
 	}
-#ifdef dbg
+#ifdef DBG
 	pr(result);
 	pr(mat);
 	pr(query_orig);
 #endif
 	CU_TRY(cudaEventRecord(end));
 	CU_TRY(cudaEventSynchronize(end));
-	float millis = 0;
-	CU_TRY(cudaEventElapsedTime(&millis, start, end));
-	printf("Runtime (ms): %0.3f\n", millis);
 
+	float gpu_millis = 0;
+	CU_TRY(cudaEventElapsedTime(&gpu_millis, start, end));
+	printf("GPU runtime (ms): %0.3f\n", gpu_millis);
+
+	// verify that result is correct
 	double mx_error = 0;
 	for (int i = 0; i < N; i++) {
 		double sum = 0;
@@ -269,7 +290,20 @@ int main() {
 		exit(0);
 	}
 	printf("Verification passed.\n");
-#ifdef dbg
+
+#if 0
+	printf("Measuring serial performance...\n");
+	CU_TRY(cudaEventRecord(start));
+	serialBenchmark(mat, result);
+	CU_TRY(cudaEventRecord(end));
+	CU_TRY(cudaEventSynchronize(end));
+
+	float cpu_millis = 0;
+	CU_TRY(cudaEventElapsedTime(&cpu_millis, start, end));
+	printf("CPU runtime (ms): %0.3f\n", cpu_millis);
+#endif
+
+#ifdef DBG
 	pr(mat);
 #endif
 	FREE_ALL;
