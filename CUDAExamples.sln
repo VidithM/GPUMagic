@@ -5,6 +5,8 @@ VisualStudioVersion = 17.6.33712.159
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Gaussian Elimination", "GaussianElimination\GaussianElimination.vcxproj", "{A3F9ECFA-0012-4ECC-B7CA-5B251AAC77CF}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MatrixTranspose", "MatrixTranspose\MatrixTranspose.vcxproj", "{44757681-795D-449C-A7F5-2C9FD808600C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -15,6 +17,10 @@ Global
 		{A3F9ECFA-0012-4ECC-B7CA-5B251AAC77CF}.Debug|x64.Build.0 = Debug|x64
 		{A3F9ECFA-0012-4ECC-B7CA-5B251AAC77CF}.Release|x64.ActiveCfg = Release|x64
 		{A3F9ECFA-0012-4ECC-B7CA-5B251AAC77CF}.Release|x64.Build.0 = Release|x64
+		{44757681-795D-449C-A7F5-2C9FD808600C}.Debug|x64.ActiveCfg = Debug|x64
+		{44757681-795D-449C-A7F5-2C9FD808600C}.Debug|x64.Build.0 = Debug|x64
+		{44757681-795D-449C-A7F5-2C9FD808600C}.Release|x64.ActiveCfg = Release|x64
+		{44757681-795D-449C-A7F5-2C9FD808600C}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
