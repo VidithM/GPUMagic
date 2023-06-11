@@ -8,7 +8,7 @@
 #include <random>
 #include <cassert>
 
-#define N 2000
+#define N 7168
 #define eps 1e-6
 #define tol 1e-5
 
@@ -16,6 +16,8 @@
 #define SHOW_PROGRESS
 
 #define THREADS_PER_BLOCK 512
+
+#define USE_TRANSPOSE
 
 #define FREE_ALL							\
 {									\
@@ -29,6 +31,7 @@
 	}								\
 									\
 	free((void*)mat);						\
+	free((void*)column);					\
 	free((void*)reduced);						\
 	free((void*)result);						\
 }									\
@@ -55,6 +58,26 @@ __global__ void daxpyKernel(double *mat, double *query, double *a, int *j)
 	if (tid >= N * N) {
 		return;
 	}
+#ifdef USE_TRANSPOSE
+	// make the blocks go left-right in the transpose
+	int row = tid / N;
+	int col = tid % N;
+
+	if (col <= *j) {
+		return;
+	} 
+	__shared__ double to_scale;
+	to_scale = mat[row * N + *j];
+
+	int dif = col - *j;
+	mat[tid] -= (a[col] * mat[tid - dif]);
+
+	if (row == 0) {
+		// first thread in each row is responsible for doing daxpy on the query vector
+		query[col] -= (a[col]) * query[*j];
+	}
+#else
+	// make the blocks go left-right
 	int row = tid / N;
 	if (row <= *j) {
 		return;
@@ -67,23 +90,30 @@ __global__ void daxpyKernel(double *mat, double *query, double *a, int *j)
 		// first thread in each row is responsible for doing daxpy on the query vector
 		query[row] -= (a[row]) * query[*j];
 	}
+#endif
 }
 
 
-__global__ void swapRowsKernel(double *x, double *y, double *qx, double *qy) {
+__global__ void swapRowsKernel(double *mat, double *query, int *swap_top, int *swap_bottom) {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N) {
 		return;
 	}
 	if (tid == 0) {
 		// zeroth thread is responsible for swapping query entries
-		double tmp = *qx;
-		*qx = *qy;
-		*qy = tmp;
+		double tmp = query[*swap_top];
+		query[*swap_top] = query[*swap_bottom];
+		query[*swap_bottom] = tmp;
 	}
-	double tmp = x[tid];
-	x[tid] = y[tid];
-	y[tid] = tmp;
+#ifdef USE_TRANSPOSE
+	double tmp = mat[tid * N + *swap_top];
+	mat[tid * N + *swap_top] = mat[tid * N + *swap_bottom];
+	mat[tid * N + *swap_bottom] = tmp;
+#else
+	double tmp = mat[*swap_top * N + tid];
+	mat[*swap_top * N + tid] = mat[*swap_bottom * N + tid];
+	mat[*swap_bottom * N + tid] = tmp;
+#endif
 }
 
 /*
@@ -92,7 +122,13 @@ TODO: Figure out how to parallelize
 */
 __global__ void findSwapRowKernel(double *mat, int *j, int *ans) {
 	for (int i = *j; i < N; i++) {
-		if (fabs(mat[i * N + *j]) > eps) {
+		int idx;
+#ifdef USE_TRANSPOSE
+		idx = *j * N + i;
+#else
+		idx = i * N + *j;
+#endif
+		if (fabs(mat[idx]) > eps) {
 			*ans = i;
 			return;
 		}
@@ -104,12 +140,24 @@ __global__ void findSwapRowKernel(double *mat, int *j, int *ans) {
 * Collects all coefficients needed for daxpy computations on a column.
 * Performed after row swap.
 */
-__global__ void collectCoeffsKernel(double *mat, double *out, int *j) {
+__global__ void collectCoeffsKernel(double *mat, double *out, int *j) { 
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if (tid >= N) {
 		return;
 	}
+	// this is constant across all threads in this block; no need for separate reads
+	// in fact, this is constant across all blocks - if there was an L1 cache like shared memory that ALL blocks had access to,
+	// we could use that
+	// __shared__ double div;
+	// double div = mat[*j * N + *j];
+
+	// old code:
+#ifdef USE_TRANSPOSE
+	out[tid] = (tid < *j ? 1 : mat[*j * N + tid] / mat[*j * N + *j]);
+#else
 	out[tid] = (tid < *j ? 1 : mat[tid * N + *j] / mat[*j * N + *j]);
+#endif
+	// out[tid] = (tid < *j ? 1 : mat[tid * N + *j] / div);
 }
 
 void pr(double** mat) {
@@ -128,17 +176,29 @@ void pr(double *vec) {
 	}
 }
 
+/*
+Idea:
+Lets store the transpose of mat as d_mat
+This will let us get good spatial locality on all operations, in addition to letting us do the
+shared memory technique for daxpy quickly
+*/
+
 // host and device matrices (host matrix stores the original matrix, d_mat will become the reduced matrix)
-double** mat, * d_mat;
+// note: if USE_TRANSPOSE is set, d_mat is stored as the transpose of mat
+double **mat, *d_mat;
+
+// build each column of the mat matrix if USE_TRANSPOSE to easily transfer to d_mat 
+double *column;
+
 // we will solve Ax = b, where A = mat, b = query
-double* query, * query_orig, * d_query;
+double *query, *query_orig, *d_query;
 
-int* non_zero_row;		// first non-zero row; used for row swap step
-int* curr_col;			// current column used for kernel computations
-double* daxpy_coeffs;   	// row scalars needed for daxpy step; computed after row swap
+int *non_zero_row;		// first non-zero row; used for row swap step
+int *curr_col;			// current column used for kernel computations
+double *daxpy_coeffs;   	// row scalars needed for daxpy step; computed after row swap
 
-double* reduced;		// reduced matrix copied to host
-double* result;			// resulting solution computed on host
+double *reduced;		// reduced matrix copied to host
+double *result;			// resulting solution computed on host
 
 /*
 * Serial implementation provided by ...
@@ -152,8 +212,12 @@ int main() {
 	mat = (double**)malloc(N * sizeof(double*));
 	// allocate device matrix
 	CU_TRY(cudaMalloc((void**)(&d_mat), N * N * sizeof(double)));
+#ifdef USE_TRANSPOSE
+	column = (double*)malloc(N * sizeof(double));
+#endif
 	// allocate host query vector
 	query = (double*)malloc(N * sizeof(double));
+	// original query vector for validation at end
 	query_orig = (double*)malloc(N * sizeof(double));
 	// allocate device query vector
 	CU_TRY(cudaMalloc((void**)(&d_query), N * sizeof(double)));
@@ -171,13 +235,24 @@ int main() {
 		// copy into ith query entry
 		CU_TRY(cudaMemcpy(d_query + i, &query_entry, sizeof(double), cudaMemcpyHostToDevice));
 		query_orig[i] = query_entry;
+
 		for (int j = 0; j < N; j++) {
 			// populate host matrix
 			mat[i][j] = distr(gen);
 		}
-		// memcpy rows into device matrix
-		CU_TRY(cudaMemcpy((void*)(d_mat + (i * N)), (void*)mat[i], N * sizeof(double), cudaMemcpyHostToDevice));
+#ifndef USE_TRANSPOSE
+		CU_TRY(cudaMemcpy((void*)(d_mat + i * N), (void*)mat[i], N * sizeof(double), cudaMemcpyHostToDevice));
+#endif
 	}
+
+#ifdef USE_TRANSPOSE
+	for (int j = 0; j < N; j++) {
+		for (int i = 0; i < N; i++) {
+			column[i] = mat[i][j];
+		}
+		CU_TRY(cudaMemcpy((void*)(d_mat + j * N), (void*)column, N * sizeof(double), cudaMemcpyHostToDevice));
+	}
+#endif
 
 	// allocate result variables on device
 	CU_TRY(cudaMalloc((void**)(&non_zero_row), sizeof(int)));
@@ -211,7 +286,7 @@ int main() {
 		}
 		if (targ != j) {
 			// only swap if found row != j
-			swapRowsKernel << <(N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat + targ * N, d_mat + j * N, d_query + targ, d_query + j);
+			swapRowsKernel << <(N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (d_mat, d_query, curr_col, non_zero_row);
 			CU_TRY(cudaPeekAtLastError());
 			CU_TRY(cudaDeviceSynchronize());
 		}
@@ -235,6 +310,17 @@ int main() {
 	reduced = (double*)malloc(N * N * sizeof(double));
 	// copy reduced matrix from device to host
 	CU_TRY(cudaMemcpy(reduced, d_mat, N * N * sizeof(double), cudaMemcpyDeviceToHost));
+
+#ifdef USE_TRANSPOSE
+	// flip entries across diagonal
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < N; j++) {
+			if (i < j) {
+				std::swap(reduced[i * N + j], reduced[j * N + i]);
+			}
+		}
+	}
+#endif
 
 	if (fabs(reduced[(N - 1) * N + (N - 1)]) < eps) {
 		// last row is all zeroes; non-invertible
@@ -306,5 +392,6 @@ int main() {
 #ifdef DBG
 	pr(mat);
 #endif
+	printf("passed here\n");
 	FREE_ALL;
 }
