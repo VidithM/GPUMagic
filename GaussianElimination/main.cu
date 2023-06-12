@@ -8,7 +8,7 @@
 #include <random>
 #include <cassert>
 
-#define N 7168
+#define N 4096
 #define eps 1e-6
 #define tol 1e-5
 
@@ -17,7 +17,7 @@
 
 #define THREADS_PER_BLOCK 512
 
-#define USE_TRANSPOSE
+// #define USE_TRANSPOSE
 
 #define FREE_ALL							\
 {									\
@@ -153,7 +153,9 @@ __global__ void collectCoeffsKernel(double *mat, double *out, int *j) {
 
 	// old code:
 #ifdef USE_TRANSPOSE
-	out[tid] = (tid < *j ? 1 : mat[*j * N + tid] / mat[*j * N + *j]);
+	__shared__ double div;
+	div = mat[*j * N + *j];
+	out[tid] = (tid < *j ? 1 : mat[*j * N + tid] / div);
 #else
 	out[tid] = (tid < *j ? 1 : mat[tid * N + *j] / mat[*j * N + *j]);
 #endif
@@ -392,6 +394,5 @@ int main() {
 #ifdef DBG
 	pr(mat);
 #endif
-	printf("passed here\n");
 	FREE_ALL;
 }
