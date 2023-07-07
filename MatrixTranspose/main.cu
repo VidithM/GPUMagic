@@ -10,6 +10,9 @@
 
 #define FREE_ALL							\
 {											\
+	cudaFree((void*)d_mat);					\
+	free((void*)row);						\
+	free((void*)result);					\
 }									\
 
 #define CU_TRY(ans)							\
@@ -66,7 +69,7 @@ int main() {
 		}
 		CU_TRY(cudaMemcpy(d_mat + i * N, row, N * sizeof(double), cudaMemcpyHostToDevice));
 	}
-	free(row);
+
 	dim3 gridDim((N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, 1);
 	dim3 blockDim(THREADS_PER_BLOCK, THREADS_PER_BLOCK, 1);
 	transposeKernel << <gridDim, blockDim >> > (d_mat);
@@ -81,4 +84,6 @@ int main() {
 			printf("(%d, %d) entry: %0.3f\n", i, j, result[i * N + j]);
 		}
 	}
+
+	FREE_ALL;
 }

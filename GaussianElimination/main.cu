@@ -9,8 +9,9 @@
 #include <cassert>
 
 #define N 4096
+
 #define eps 1e-6
-#define tol 1e-5
+#define tol 1e-3
 
 // #define DBG
 #define SHOW_PROGRESS
@@ -171,6 +172,16 @@ void pr(double** mat) {
 	}
 }
 
+void pr2D(double** mat) {
+	printf("Printing matrix of dim: (%d, %d):\n", N, N);
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < N; j++) {
+			printf("%0.3f\t", mat[i][j]);
+		}
+		printf("\n");
+	}
+}
+
 void pr(double *vec) {
 	printf("Printng vector of length: %d\n", N);
 	for (int i = 0; i < N; i++) {
@@ -202,11 +213,27 @@ double *daxpy_coeffs;   	// row scalars needed for daxpy step; computed after ro
 double *reduced;		// reduced matrix copied to host
 double *result;			// resulting solution computed on host
 
-/*
-* Serial implementation provided by ...
-* 
-*/
-void serialBenchmark(double **a, double *ans) {}
+
+void serialBenchmark(double **mat, double *ans) {
+	for (int j = 0; j < N - 1; j++) {
+		int swp = -1;
+		for (int i = j; i < N; i++) {
+			if (fabs(mat[i][j]) > 1e-4) {
+				swp = i;
+				break;
+			}
+		}
+		for (int k = 0; k < N; k++) {
+			std::swap(mat[swp][k], mat[j][k]);
+		}
+		for (int i = j + 1; i < N; i++) {
+			double fac = mat[i][j] / mat[j][j];
+			for (int k = 0; k < N; k++) {
+				mat[i][k] -= fac * mat[j][k];
+			}
+		}
+	}
+}
 
 int main() {
 
@@ -379,16 +406,14 @@ int main() {
 	}
 	printf("Verification passed.\n");
 
-#if 0
+#if 1
 	printf("Measuring serial performance...\n");
-	CU_TRY(cudaEventRecord(start));
+	clock_t cpu_start = clock();
 	serialBenchmark(mat, result);
-	CU_TRY(cudaEventRecord(end));
-	CU_TRY(cudaEventSynchronize(end));
+	clock_t cpu_end = clock();
 
-	float cpu_millis = 0;
-	CU_TRY(cudaEventElapsedTime(&cpu_millis, start, end));
-	printf("CPU runtime (ms): %0.3f\n", cpu_millis);
+	float cpu_secs = ((double)(cpu_end - cpu_start) / CLOCKS_PER_SEC);
+	printf("CPU runtime (s): %0.3f\n", cpu_secs);
 #endif
 
 #ifdef DBG
