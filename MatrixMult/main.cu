@@ -80,8 +80,8 @@ __global__ void multKernel(double *res, double *a)
 	__syncthreads();
 	// multiply
 	for (int i = 0; i < N; i++) {
-		double x = need[l_row][i];
-		double y = need[r_col + col_start - row_start][i];
+		double x = need[l_row - row_start][i];
+		double y = need[(r_col + col_start - row_start) - row_start][i];
 		res[l_row * N + r_col] += x * y;
 	}
 #else 
