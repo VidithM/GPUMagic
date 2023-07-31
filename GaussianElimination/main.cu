@@ -9,16 +9,16 @@
 #include <cassert>
 
 #define N 4096
+#define THREADS_PER_BLOCK 512
+#define IGNORE_P2 0
+
+#define USE_TRANSPOSE
 
 #define eps 1e-6
 #define tol 1e-3
 
 // #define DBG
 #define SHOW_PROGRESS
-
-#define THREADS_PER_BLOCK 512
-
-// #define USE_TRANSPOSE
 
 #define FREE_ALL							\
 {									\
@@ -53,6 +53,16 @@
 }									\
 
 
+constexpr inline int static_popcount(const int x) {
+	int ans = 0;
+	int xx = x;
+	while (xx) {
+		ans += (xx & 1);
+		xx >>= 1;
+	}
+	return ans;
+}
+
 __global__ void daxpyKernel(double *mat, double *query, double *a, int *j)
 {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -64,32 +74,41 @@ __global__ void daxpyKernel(double *mat, double *query, double *a, int *j)
 	int row = tid / N;
 	int col = tid % N;
 
-	if (col <= *j) {
+	__shared__ int piv;
+	__shared__ double scale, to_scale;
+	scale = a[col];
+	to_scale = mat[row * N + *j];
+	piv = *j;
+
+
+	if (col <= piv) {
 		return;
 	} 
-	__shared__ double to_scale;
-	to_scale = mat[row * N + *j];
 
-	int dif = col - *j;
-	mat[tid] -= (a[col] * mat[tid - dif]);
+	int dif = col - piv;
+	mat[tid] -= (scale * to_scale);
 
 	if (row == 0) {
-		// first thread in each row is responsible for doing daxpy on the query vector
-		query[col] -= (a[col]) * query[*j];
+		// first thread in each column is responsible for doing daxpy on the query vector
+		query[col] -= (scale) * query[piv];
 	}
 #else
 	// make the blocks go left-right
 	int row = tid / N;
-	if (row <= *j) {
+	__shared__ int piv;
+	__shared__ double scale;
+	piv = *j;
+	scale = a[row];
+	if (row <= piv) {
 		return;
 	}
 	// printf("%d %d\n", row, tid % N);
-	int dif = row - *j;
-	mat[tid] -= (a[row]) * mat[tid - dif * N];
+	int dif = row - piv;
+	mat[tid] -= scale * mat[tid - dif * N];
 
-	if (tid % N == 0) {
+	if ((tid & (N - 1)) == 0) {
 		// first thread in each row is responsible for doing daxpy on the query vector
-		query[row] -= (a[row]) * query[*j];
+		query[row] -= scale * query[piv];
 	}
 #endif
 }
@@ -236,6 +255,8 @@ void serialBenchmark(double **mat, double *ans) {
 }
 
 int main() {
+	static_assert (IGNORE_P2 || (static_popcount (N) == 1), "N should be a power of 2");
+	static_assert (N % THREADS_PER_BLOCK == 0, "N must be a multiple of THREADS_PER_BLOCK");
 
 	// allocate host matrix
 	mat = (double**)malloc(N * sizeof(double*));
@@ -336,6 +357,9 @@ int main() {
 		}
 #endif
 	}
+	CU_TRY(cudaEventRecord(end));
+	CU_TRY(cudaEventSynchronize(end));
+
 	reduced = (double*)malloc(N * N * sizeof(double));
 	// copy reduced matrix from device to host
 	CU_TRY(cudaMemcpy(reduced, d_mat, N * N * sizeof(double), cudaMemcpyDeviceToHost));
@@ -377,8 +401,6 @@ int main() {
 	pr(mat);
 	pr(query_orig);
 #endif
-	CU_TRY(cudaEventRecord(end));
-	CU_TRY(cudaEventSynchronize(end));
 
 	float gpu_millis = 0;
 	CU_TRY(cudaEventElapsedTime(&gpu_millis, start, end));

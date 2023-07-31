@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Gaussian Elimination", "Gau
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MatrixTranspose", "MatrixTranspose\MatrixTranspose.vcxproj", "{44757681-795D-449C-A7F5-2C9FD808600C}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MatrixMult", "MatrixMult\MatrixMult.vcxproj", "{2A056F6D-14B7-4EFA-A9F3-5EE9C469A46F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,10 @@ Global
 		{44757681-795D-449C-A7F5-2C9FD808600C}.Debug|x64.Build.0 = Debug|x64
 		{44757681-795D-449C-A7F5-2C9FD808600C}.Release|x64.ActiveCfg = Release|x64
 		{44757681-795D-449C-A7F5-2C9FD808600C}.Release|x64.Build.0 = Release|x64
+		{2A056F6D-14B7-4EFA-A9F3-5EE9C469A46F}.Debug|x64.ActiveCfg = Debug|x64
+		{2A056F6D-14B7-4EFA-A9F3-5EE9C469A46F}.Debug|x64.Build.0 = Debug|x64
+		{2A056F6D-14B7-4EFA-A9F3-5EE9C469A46F}.Release|x64.ActiveCfg = Release|x64
+		{2A056F6D-14B7-4EFA-A9F3-5EE9C469A46F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
