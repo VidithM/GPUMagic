@@ -1,32 +1,8 @@
 // Main include file for all sources
+#include "common.h"
 
-// ================== CUDA headers =====================
-#define CU_TRY(ans)					    \
-{								    	\
-	if (ans != cudaSuccess) {		    \
-		fprintf(					    \
-			stderr,					    \
-			"GPUassert: %s %s %d\n",    \
-			cudaGetErrorString(ans),	\
-			__FILE__,					\
-			__LINE__					\
-		);							    \
-		FREE_ALL;						\
-		if (abort) exit(ans);			\
-	}								    \
-}
-
-#ifndef FREE_ALL
-    #define FREE_ALL {}
-#endif
-// =====================================================
-
-
-// ======  Utils/types/common headers, typedefs, etc.===
-#include <iostream>
-#include <cassert>
-
-#include "matrix.h"
+// ============= Utils/types/typedefs, etc. ============
+#include "matrix.cuh"
 // =====================================================
 
 
@@ -35,6 +11,8 @@ template <typename T>
 void matmul_dense (
 	matrix<T> **res,
 	matrix<T> *A,
-	matrix<T> *B
+	matrix<T> *B,
+	size_t block_dim_rows,
+	size_t block_dim_cols
 );
 // =====================================================
