@@ -35,14 +35,14 @@
     printf(fmt, args);                          \
 }  								                \
 
-#define CU_ERROR(fmt, args...)  		                 \
-{                               		                 \
-    fprintf(stderr, "[CU_ERROR]: File: %s, Line: %d: ",  \
-            __FILE__,                                    \
-            __LINE__                                     \
-    );                                                   \
-    fprintf(stderr, fmt, args);                          \
-	FREE_ALL;							                 \
-	exit(-1);							                 \
-}  										                 \
+#define CU_ERROR(fmt, args...)  		             \
+{                               		             \
+    printf("[CU_ERROR]: File: %s, Line: %d: ", 	 	 \
+            __FILE__,                                \
+            __LINE__                                 \
+    );                                               \
+    printf(fmt, args);                         		 \
+	FREE_ALL;							             \
+	exit(-1);							             \
+}  										             \
 // =====================================================

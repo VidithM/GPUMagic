@@ -21,7 +21,7 @@ class matrix {
         size_t nrows, ncols, nvals;
         bool did_init;
 
-        void* allocate(int nbytes){
+        __host__ __device__ void* allocate(int nbytes){
             if(location == UNKNOWN_LOCATION){
                 CU_ERROR("Attempt to use uninitialized matrix\n", "");
             }
@@ -34,7 +34,7 @@ class matrix {
             }
         }
 
-        void scrap(void **block){
+        __host__ __device__ void scrap(void **block){
             if(location == UNKNOWN_LOCATION){
                 CU_ERROR("Attempt to use uninitialized matrix\n", "");
             }
@@ -109,11 +109,11 @@ class matrix {
             // TODO: Change existing contents of array
         }
 
-        storage_type get_storage_type(){
+        __host__ __device__ storage_type get_storage_type(){
             return curr_type;
         }
 
-        void set_storage_location(storage_location location){
+        __host__ __device__ void set_storage_location(storage_location location){
             // Note: Does NOT actually move the contents of the matrix. This simply
             // makes it known that the matrix is supposed to be stored in a certain location,
             // which is checked for assertions and memory allocation/de-allocation.
@@ -124,12 +124,9 @@ class matrix {
             this->location = location;
         }
 
-        storage_location get_storage_location(){
+        __host__ __device__ storage_location get_storage_location(){
             return location;
         }
-
-        static __host__ matrix<T>* toGPU(matrix<T> *mat);
-        static __host__ matrix<T>* toCPU(matrix<T> *d_mat);
 
         __host__ __device__ bool is_diag(){
             if(!did_init){
@@ -218,4 +215,34 @@ class matrix {
                 #endif
             }
         }
+
+        __host__ __device__ void unpack(T **Ax, size_t **Ap, size_t **Ai, size_t **Aj, bool **Ab){
+            if(!did_init){
+                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+            }
+            if(curr_type == DENSE){
+                if(Ax != NULL){
+                    (*Ax) = (T*) allocate(nvals * sizeof(T));
+                    if(location == CPU){
+                        memcpy((*Ax), this->Ax, nvals * sizeof(T));
+                    } else {
+                        cudaMemcpy((*Ax), this->Ax, nvals * sizeof(T), cudaMemcpyDeviceToDevice);
+                    }
+                }
+                if(Ab != NULL){
+                    (*Ab) = (bool*) allocate(nrows * ncols * sizeof(bool));
+                    if(location == CPU){
+                        memcpy((*Ab), this->Ab, nrows * ncols * sizeof(bool));
+                    } else {
+                        cudaMemcpy((*Ab), this->Ab, nrows * ncols * sizeof(bool), cudaMemcpyDeviceToDevice);
+                    }
+                }
+            } else {
+                // TODO: Implement this
+                CU_ERROR("Unsupported method\n", "");
+            }
+        }
+
+        static __host__ matrix<T>* toGPU(matrix<T> *mat);
+        static __host__ matrix<T>* toCPU(matrix<T> *d_mat);
 };
