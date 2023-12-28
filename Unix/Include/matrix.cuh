@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.h"
+#include "common.cuh"
 
 #include <map>
 #include <set>
@@ -48,8 +48,18 @@ class matrix {
         }
 
     public:
-        __host__ __device__ matrix() : did_init(false), curr_type(UNKNOWN_TYPE), location(UNKNOWN_LOCATION), Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {}
-        __host__ __device__ ~matrix() { scrap((void**) &Ap); scrap((void**) &Ai); scrap((void**) &Aj); scrap((void**) &Ab); scrap((void**) &Ax); }
+        __host__ __device__ matrix() : curr_type(UNKNOWN_TYPE), location(UNKNOWN_LOCATION), Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {}
+        __host__ __device__ matrix(storage_type type, storage_location location) : Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {
+            this->curr_type = type;
+            this->location = location;
+        }
+        __host__ __device__ ~matrix() {
+            if(!did_init){
+                // Nothing to do
+                return;
+            }
+            scrap((void**) &Ap); scrap((void**) &Ai); scrap((void**) &Aj); scrap((void**) &Ab); scrap((void**) &Ax); 
+        }
 
         __host__ __device__ size_t get_nrows(){ return nrows; }
         __host__ __device__ size_t get_ncols(){ return ncols; }
@@ -58,6 +68,9 @@ class matrix {
         __host__ __device__ bool exists(size_t row, size_t col){
             if(!did_init){
                 CU_ERROR("Attempt to use uninitialized matrix\n", "");
+            }
+            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
+                CU_ERROR("Out of bounds matrix access\n", "");
             }
             if(curr_type == DENSE){
                 return Ab[row * ncols + col];
@@ -72,6 +85,9 @@ class matrix {
             if(!did_init){
                 CU_ERROR("Attempt to use uninitialized matrix\n", "");
             }
+            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
+                CU_ERROR("Out of bounds matrix access\n", "");
+            }
             if(curr_type == DENSE){
                 return Ax[row * ncols + col];
             } else {
@@ -85,11 +101,15 @@ class matrix {
             if(!did_init){
                 CU_ERROR("Attempt to use uninitialized matrix\n", "");
             }
+            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
+                CU_ERROR("Out of bounds matrix access\n", "");
+            }
             if(curr_type == DENSE){
                 Ax[row * ncols + col] = val;
                 Ab[row * ncols + col] = true;
             } else {
                 // TODO: Implement this
+                CU_ERROR("Unsupported method\n", "");
             }
         }
 
@@ -97,16 +117,25 @@ class matrix {
             if(!did_init){
                 CU_ERROR("Attempt to use uninitialized matrix\n", "");
             }
+            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
+                CU_ERROR("Out of bounds matrix access\n", "");
+            }
             if(curr_type == DENSE){
                 Ab[row * ncols + col] = false;
             } else {
                 // TODO: Implement this
+                CU_ERROR("Unsupported method\n", "");
             }
         }
 
         __host__ __device__ void set_storage_type(storage_type type){
+            if(type == UNKNOWN_TYPE){
+                CU_ERROR("Cannot set storage type to unkown\n", "");
+            }
             this->curr_type = type;
-            // TODO: Change existing contents of array
+            if(did_init){
+                // TODO: Change existing contents
+            }
         }
 
         __host__ __device__ storage_type get_storage_type(){
@@ -119,8 +148,11 @@ class matrix {
             // which is checked for assertions and memory allocation/de-allocation.
 
             // It is the responsibility of the user to make sure that the actual location of
-            // the matrix is consistent with this setting. Static factory functions to convert
-            // to a new storage location are available with matrix<T>::toGPU() and matrix<T>::toCPU().
+            // the matrix is consistent with this setting. Factory functions to convert
+            // to a new storage location are available with to_gpu() and to_cpu().
+            if(location == UNKNOWN_LOCATION){
+                CU_ERROR("Cannot set storage location to unknown\n", "");
+            }
             this->location = location;
         }
 
@@ -144,35 +176,33 @@ class matrix {
             }
         }
 
-         __host__ __device__ void init(
-            T *entries, 
-            size_t *rows, 
-            size_t *cols, 
-            size_t nvals, 
-            size_t nrows, 
-            size_t ncols,
-            storage_location location,
-            storage_type type
+        __host__ __device__ bool is_init(){
+            return did_init;
+        }
+        
+        __host__ __device__ void init(
+            T *entries = NULL,
+            size_t *rows = NULL,
+            size_t *cols = NULL,
+            size_t nvals = 0,
+            size_t nrows = 0,
+            size_t ncols = 0
         ){
-            if(location == UNKNOWN_LOCATION || type == UNKNOWN_TYPE){
-                CU_ERROR("Attempt to initialize matrix with unknown storage location/type\n", "");
+            if(location == UNKNOWN_LOCATION || curr_type == UNKNOWN_TYPE){
+                CU_ERROR("Attempt to initialize matrix with unknown storage location/type. \\
+                Please specify these using set_storage_location() and set_storage_type()\n", "");
             }
-
-            this->curr_type = type;
-            this->location = location;
+            
             this->nrows = nrows;
             this->ncols = ncols;
             this->nvals = nvals;
-
-            CU_PRINT("%d\n", get_storage_location());
-            CU_PRINT("%d\n", get_storage_type());
 
             if(curr_type == DENSE){
                 if(Ab != NULL){
                     scrap((void**) &Ab); scrap((void**) &Ax);
                 }
-                Ab = (bool*) allocate(nrows * ncols);
-                Ax = (T*) allocate(nrows * ncols);
+                Ab = (bool*) allocate(nrows * ncols * sizeof(bool));
+                Ax = (T*) allocate(nrows * ncols * sizeof(T));
 
                 if(location == CPU){
                     memset(Ab, false, (nrows * ncols) * sizeof(bool));
@@ -189,6 +219,7 @@ class matrix {
                 CU_ERROR("Unsupported method\n", "");
                 #if 0
                     // TODO: Finish implementing CSR/CSC init
+                    // Cannot use map in device code
                     if(Ap != NULL){
                         scrap((void**) &Ap); scrap((void**) &Aj); scrap((void**) &Ai); scrap((void**) &Ax);
                     }
@@ -216,33 +247,15 @@ class matrix {
             }
         }
 
-        __host__ __device__ void unpack(T **Ax, size_t **Ap, size_t **Ai, size_t **Aj, bool **Ab){
-            if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
-            }
-            if(curr_type == DENSE){
-                if(Ax != NULL){
-                    (*Ax) = (T*) allocate(nvals * sizeof(T));
-                    if(location == CPU){
-                        memcpy((*Ax), this->Ax, nvals * sizeof(T));
-                    } else {
-                        cudaMemcpy((*Ax), this->Ax, nvals * sizeof(T), cudaMemcpyDeviceToDevice);
-                    }
-                }
-                if(Ab != NULL){
-                    (*Ab) = (bool*) allocate(nrows * ncols * sizeof(bool));
-                    if(location == CPU){
-                        memcpy((*Ab), this->Ab, nrows * ncols * sizeof(bool));
-                    } else {
-                        cudaMemcpy((*Ab), this->Ab, nrows * ncols * sizeof(bool), cudaMemcpyDeviceToDevice);
-                    }
-                }
-            } else {
-                // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
-            }
-        }
+        const size_t*   get_Ap(){ return Ap; }
+        const size_t*   get_Ai(){ return Ai; }
+        const size_t*   get_Aj(){ return Aj; }
+        const bool*     get_Ab(){ return Ab; }
+        const T*        get_Ax(){ return Ax; }
 
-        static __host__ matrix<T>* toGPU(matrix<T> *mat);
-        static __host__ matrix<T>* toCPU(matrix<T> *d_mat);
+        template <typename V>
+        friend __host__ matrix<V>* to_gpu(matrix<V> *mat);
+
+        template <typename V>
+        friend __host__ matrix<V>* to_cpu(matrix<V> *d_mat);
 };

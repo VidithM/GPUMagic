@@ -1,5 +1,5 @@
 // Main include file for all sources
-#include "common.h"
+#include "common.cuh"
 
 // ============= Utils/types/typedefs, etc. ============
 #include "matrix.cuh"
