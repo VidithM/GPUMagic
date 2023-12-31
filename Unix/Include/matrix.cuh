@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <cstring>
+#include <sstream>
 
 enum storage_type       { DENSE, CSR, CSC, UNKNOWN_TYPE };
 enum storage_location   { CPU, GPU, UNKNOWN_LOCATION };
@@ -14,7 +15,7 @@ class matrix {
     private:
         storage_type curr_type;
         storage_location location;
-        size_t *Ap;                 // start index of k-th row/column for sparse
+        size_t *Ap;                 // start index of k-th row/column fo`r sparse
         size_t *Ai, *Aj;            // rows/columns and values for sparse
         bool *Ab;                   // pattern of where entries are for dense
         T *Ax;                      // values of entries for both dense and sparse
@@ -48,12 +49,12 @@ class matrix {
         }
 
     public:
-        __host__ __device__ matrix() : curr_type(UNKNOWN_TYPE), location(UNKNOWN_LOCATION), Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {}
+        matrix() = delete;
         __host__ __device__ matrix(storage_type type, storage_location location) : Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {
             this->curr_type = type;
             this->location = location;
         }
-        __host__ __device__ ~matrix() {
+        __host__ ~matrix() {
             if(!did_init){
                 // Nothing to do
                 return;
@@ -142,20 +143,6 @@ class matrix {
             return curr_type;
         }
 
-        __host__ __device__ void set_storage_location(storage_location location){
-            // Note: Does NOT actually move the contents of the matrix. This simply
-            // makes it known that the matrix is supposed to be stored in a certain location,
-            // which is checked for assertions and memory allocation/de-allocation.
-
-            // It is the responsibility of the user to make sure that the actual location of
-            // the matrix is consistent with this setting. Factory functions to convert
-            // to a new storage location are available with to_gpu() and to_cpu().
-            if(location == UNKNOWN_LOCATION){
-                CU_ERROR("Cannot set storage location to unknown\n", "");
-            }
-            this->location = location;
-        }
-
         __host__ __device__ storage_location get_storage_location(){
             return location;
         }
@@ -180,7 +167,7 @@ class matrix {
             return did_init;
         }
         
-        __host__ __device__ void init(
+        __host__ void init(
             T *entries = NULL,
             size_t *rows = NULL,
             size_t *cols = NULL,
@@ -247,15 +234,49 @@ class matrix {
             }
         }
 
-        const size_t*   get_Ap(){ return Ap; }
-        const size_t*   get_Ai(){ return Ai; }
-        const size_t*   get_Aj(){ return Aj; }
-        const bool*     get_Ab(){ return Ab; }
-        const T*        get_Ax(){ return Ax; }
+        __host__ void print(){
+            if(!did_init){
+                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+            }
+            if(get_storage_type() == DENSE){
+                std::ostringstream oss;
+                oss << "\nDENSE (" << nrows << "-by-" << ncols << ") MATRIX" << std::endl;
+                oss << "PATTERN: (Ab)" << std::endl;
+                for(int i = 0; i < nrows; i++){
+                    for(int j = 0; j < ncols; j++){
+                        oss << Ab[i * ncols + j] << " ";
+                    }
+                    oss << std::endl;
+                }
+                oss << "ENTRIES: (Ax)" << std::endl;
+                for(size_t i = 0; i < nrows; i++){
+                    for(int j = 0; j < ncols; j++){
+                        if(!Ab[i * ncols + j]){
+                            oss << ". ";
+                        } else {
+                            oss << Ax[i * ncols + j] << " ";
+                        }
+                    }
+                    oss << std::endl;
+                }
+                CU_PRINT(oss.str().c_str(), "");
+            } else {
+                CU_ERROR("Unsupported method\n", "");
+            }
+        }
+
+        __host__ __device__ const size_t*   get_Ap(){ return Ap; }
+        __host__ __device__ const size_t*   get_Ai(){ return Ai; }
+        __host__ __device__ const size_t*   get_Aj(){ return Aj; }
+        __host__ __device__ const bool*     get_Ab(){ return Ab; }
+        __host__ __device__ const T*        get_Ax(){ return Ax; }
 
         template <typename V>
         friend __host__ matrix<V>* to_gpu(matrix<V> *mat);
 
         template <typename V>
         friend __host__ matrix<V>* to_cpu(matrix<V> *d_mat);
+
+        template <typename V>
+        friend __host__ void gpu_del(matrix<V> *d_mat);
 };

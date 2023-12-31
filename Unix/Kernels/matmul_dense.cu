@@ -1,24 +1,29 @@
 #include "GPUMagic.h"
 
 template <typename T>
-__global__ void mult_kernel(matrix<T> **res, matrix<T> *A, matrix<T> *B)
+__global__ void mult_kernel(matrix<T> *res, matrix<T> *A, matrix<T> *B)
 {
-    printf("Passed in the kernel\n");
-    printf("%d\n", A->get_nrows());
+    size_t nrows = res->get_nrows();
+    size_t ncols = res->get_ncols();
 
     int tid_x = blockIdx.x * blockDim.x + threadIdx.x;
     int tid_y = blockIdx.y * blockDim.y + threadIdx.y;
-    printf("in kernel w/ (tid_x, tid_y): (%d, %d)\n", tid_x, tid_y);
-
-    matrix<float> *test_mat = new matrix<float>();
-    
-    // __syncthreads();
-
-    if(tid_x == 0 && tid_y == 0){
-        // test_mat.set_storage_type(DENSE);
-        // test_mat.set_storage_location(GPU);
+    if(tid_x >= nrows || tid_y >= ncols){
+        return;
     }
-    // test_mat->init(NULL, NULL, NULL, 0, 1, 1);
+    printf("in kernel w/ (tid_x, tid_y): (%d, %d)\n", tid_x, tid_y);
+    T sum = 0;
+    bool found = false;
+    for(int k = 0; k < A->get_ncols(); k++){
+        if(A->exists(tid_x, k) && B->exists(k, tid_y)){
+            sum += A->at(tid_x, k) * B->at(k, tid_y);
+            found = true;
+        }
+    }
+    if(found){
+        printf("put (%0.6f) for entry (%d, %d)\n", sum, tid_x, tid_y);
+        res->put(tid_x, tid_y, sum);
+    }
 }
 
 template <typename T>
@@ -38,20 +43,32 @@ void matmul_dense (
 
     assert(A->get_ncols() == B->get_nrows());
 
-    assert(res == NULL);
+    assert(res != NULL);
 
     
     matrix<T> *d_A = to_gpu(A);
     matrix<T> *d_B = to_gpu(B);
-    matrix<T> *d_res;
+
+    size_t res_nrows = A->get_nrows();
+    size_t res_ncols = B->get_ncols();
+
+    matrix<T> *h_res = new matrix<T>(DENSE, CPU);
+    h_res->init(NULL, NULL, NULL, 0, res_nrows, res_ncols);
+    matrix<T> *d_res = to_gpu(h_res);
+    delete h_res; h_res = NULL;
 
     dim3 block_dim(block_dim_rows, block_dim_cols);
-    dim3 grid_dim(1, 1);
-
-    mult_kernel<<<grid_dim, block_dim>>>(&d_res, d_A, d_B);
+    dim3 grid_dim(
+        ((res_nrows + block_dim_rows - 1) / block_dim_rows),
+        ((res_ncols + block_dim_cols - 1) / block_dim_cols)
+    );
+    mult_kernel<<<grid_dim, block_dim>>>(d_res, d_A, d_B);
     CU_TRY(cudaPeekAtLastError());
     CU_TRY(cudaDeviceSynchronize());
 
+    h_res = to_cpu(d_res);
+    (*res) = h_res;
+    gpu_del(d_res);
 }
 
 
