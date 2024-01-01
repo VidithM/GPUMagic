@@ -12,6 +12,7 @@ set ( CMAKE_POSITION_INDEPENDENT_CODE ON )
 
 set ( CUDA_KERNEL_SOURCES 
     Kernels/matmul_dense.cu
+    Kernels/cumsum.cu
     Utils/matrix.cu
 )
 
@@ -22,6 +23,11 @@ cuda_add_library ( kernels SHARED ${CUDA_KERNEL_SOURCES} )
 
 target_compile_options( kernels PRIVATE $<$<COMPILE_LANGUAGE:CUDA>: -rdc=true )
 
-add_executable ( matmul Tests/matmul.cpp )
-set_target_properties ( matmul PROPERTIES LINKER_LANGUAGE CUDA )
-target_link_libraries ( matmul PRIVATE kernels ${CUDA_LIBRARIES} )
+file ( GLOB tests "Tests/*.cpp" )
+
+foreach ( file ${tests} )
+    get_filename_component ( EXC_NAME ${file} NAME_WE )
+    add_executable ( ${EXC_NAME} ${file} )
+    set_target_properties ( ${EXC_NAME} PROPERTIES LINKER_LANGUAGE CUDA )
+    target_link_libraries ( ${EXC_NAME} PRIVATE kernels ${CUDA_LIBRARIES} )
+endforeach ()

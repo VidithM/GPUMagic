@@ -15,4 +15,11 @@ void matmul_dense (
 	size_t block_dim_rows,
 	size_t block_dim_cols
 );
+
+template <typename T>
+void cumsum (
+    matrix<T> **res,
+    matrix<T> *arr,
+    size_t chunk_size
+);
 // =====================================================

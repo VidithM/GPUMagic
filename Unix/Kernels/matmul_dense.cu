@@ -11,7 +11,6 @@ __global__ void mult_kernel(matrix<T> *res, matrix<T> *A, matrix<T> *B)
     if(tid_x >= nrows || tid_y >= ncols){
         return;
     }
-    printf("in kernel w/ (tid_x, tid_y): (%d, %d)\n", tid_x, tid_y);
     T sum = 0;
     bool found = false;
     for(int k = 0; k < A->get_ncols(); k++){
@@ -21,7 +20,6 @@ __global__ void mult_kernel(matrix<T> *res, matrix<T> *A, matrix<T> *B)
         }
     }
     if(found){
-        printf("put (%0.6f) for entry (%d, %d)\n", sum, tid_x, tid_y);
         res->put(tid_x, tid_y, sum);
     }
 }
@@ -69,6 +67,8 @@ void matmul_dense (
     h_res = to_cpu(d_res);
     (*res) = h_res;
     gpu_del(d_res);
+    gpu_del(d_A);
+    gpu_del(d_B);
 }
 
 
