@@ -5,7 +5,8 @@ __global__ void cumsum_kernel_phase1(matrix<T> *res, matrix<T> *partial, matrix<
 {
     size_t n = arr->get_ncols();
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    int nthreads = partial->get_ncols(); 
+    int nthreads = partial->get_ncols();
+    if(tid >= nthreads){ return; } 
     size_t len = *chunk_size;
 
     T sum = 0;
@@ -22,6 +23,7 @@ __global__ void cumsum_kernel_phase2(matrix<T> *res, matrix<T> *partial, matrix<
     size_t n = arr->get_ncols();
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int nthreads = partial->get_ncols();
+    if(tid >= nthreads){ return; }
     size_t len = *chunk_size;
 
     T prev_sum = 0;
@@ -47,6 +49,8 @@ void cumsum (
     assert(res != NULL);
 
     int nthreads = ((arr->get_ncols() + chunk_size - 1) / chunk_size);
+    int block_size = std::min(nthreads + (32 - (nthreads % 32)), 512);
+    int grid_size = ((nthreads + block_size - 1) / block_size);
 
     size_t *d_chunk_size;
     cudaMalloc(&d_chunk_size, sizeof(size_t));
@@ -62,12 +66,16 @@ void cumsum (
     delete h_partial; delete h_res; 
 
     matrix<T> *d_arr = to_gpu(arr);
-
-    cumsum_kernel_phase1<<<1, nthreads>>>(d_res, d_partial, d_arr, d_chunk_size);
+    gpu_timer t;
+    t.start("phase1");
+    cumsum_kernel_phase1<<<grid_size, block_size>>>(d_res, d_partial, d_arr, d_chunk_size);
+    t.end("phase1");
     CU_TRY(cudaPeekAtLastError());
     CU_TRY(cudaDeviceSynchronize());
 
-    cumsum_kernel_phase2<<<1, nthreads>>>(d_res, d_partial, d_arr, d_chunk_size);
+    t.start("phase2");
+    cumsum_kernel_phase2<<<grid_size, block_size>>>(d_res, d_partial, d_arr, d_chunk_size);
+    t.end("phase2");
     CU_TRY(cudaPeekAtLastError());
     CU_TRY(cudaDeviceSynchronize());
 

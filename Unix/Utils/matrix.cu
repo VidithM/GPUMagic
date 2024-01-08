@@ -83,7 +83,6 @@ __host__ void gpu_del(matrix<T> *d_mat){
     // similar to to_cpu, but deallocate instead
     matrix<T> h_mat(DENSE, CPU);
     cudaMemcpy(&h_mat, d_mat, sizeof(matrix<T>), cudaMemcpyDeviceToHost);
-    printf("passed gpu del w/ mat 0x%x\n", d_mat);
 
     cudaFree(h_mat.Ax);
     cudaFree(h_mat.Ab);

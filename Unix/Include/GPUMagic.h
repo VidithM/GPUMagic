@@ -3,6 +3,7 @@
 
 // ============= Utils/types/typedefs, etc. ============
 #include "matrix.cuh"
+#include "timer.cuh"
 // =====================================================
 
 
