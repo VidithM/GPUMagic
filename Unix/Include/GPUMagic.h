@@ -21,6 +21,7 @@ template <typename T>
 void cumsum (
     matrix<T> **res,
     matrix<T> *arr,
-    size_t chunk_size
+    size_t chunk_size,
+	size_t block_size
 );
 // =====================================================

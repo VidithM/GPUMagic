@@ -3,8 +3,8 @@
 int main(){
     matrix<float> *A, *B;
 
-    A = new matrix<float>(DENSE, CPU);
-    B = new matrix<float>(DENSE, CPU);
+    A = new matrix<float>(DENSE);
+    B = new matrix<float>(DENSE);
 
     size_t A_rows[4] = {0, 0, 1, 1}; size_t A_cols[4] = {1, 3, 1, 3};
     size_t B_rows[4] = {1, 3, 1, 3}; size_t B_cols[4] = {0, 0, 1, 1};

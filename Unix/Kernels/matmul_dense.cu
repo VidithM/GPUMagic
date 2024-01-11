@@ -50,7 +50,7 @@ void matmul_dense (
     size_t res_nrows = A->get_nrows();
     size_t res_ncols = B->get_ncols();
 
-    matrix<T> *h_res = new matrix<T>(DENSE, CPU);
+    matrix<T> *h_res = new matrix<T>(DENSE);
     h_res->init(NULL, NULL, NULL, 0, res_nrows, res_ncols);
     matrix<T> *d_res = to_gpu(h_res);
     delete h_res; h_res = NULL;

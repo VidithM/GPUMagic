@@ -22,37 +22,26 @@ class matrix {
         size_t nrows, ncols, nvals;
         bool did_init;
 
-        __host__ __device__ void* allocate(int nbytes){
+        __host__ void* allocate(int nbytes){
             if(location == UNKNOWN_LOCATION){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if(location == CPU){
-                return malloc(nbytes);
-            } else {
-                void *res = NULL;
-                cudaMalloc(&res, nbytes);
-                return res;
-            }
+            return malloc(nbytes);
         }
 
-        __host__ __device__ void scrap(void **block){
+        __host__ void scrap(void **block){
             if(location == UNKNOWN_LOCATION){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if(location == CPU){
-                free(*block);
-                *block = NULL;
-            } else {
-                cudaFree(*block);
-                *block = NULL;
-            }
+            free(*block);
+            *block = NULL;
         }
 
     public:
         matrix() = delete;
-        __host__ __device__ matrix(storage_type type, storage_location location) : Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {
+        __host__ matrix(storage_type type) : did_init(false), Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {
             this->curr_type = type;
-            this->location = location;
+            this->location = CPU;
         }
         __host__ ~matrix() {
             if(!did_init){
@@ -68,70 +57,70 @@ class matrix {
 
         __host__ __device__ bool exists(size_t row, size_t col){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access\n", __FILE__, __LINE__);
             }
             if(curr_type == DENSE){
                 return Ab[row * ncols + col];
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
             }
             return false;
         }
 
         __host__ __device__ T at(size_t row, size_t col){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access\n", __FILE__, __LINE__);
             }
             if(curr_type == DENSE){
                 return Ax[row * ncols + col];
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
             }
             return Ax[0];
         }
 
         __host__ __device__ void put(size_t row, size_t col, T val){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access\n", __FILE__, __LINE__);
             }
             if(curr_type == DENSE){
                 Ax[row * ncols + col] = val;
                 Ab[row * ncols + col] = true;
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
             }
         }
 
         __host__ __device__ void del(size_t row, size_t col){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access\n", __FILE__, __LINE__);
             }
             if(curr_type == DENSE){
                 Ab[row * ncols + col] = false;
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
             }
         }
 
         __host__ __device__ void set_storage_type(storage_type type){
             if(type == UNKNOWN_TYPE){
-                CU_ERROR("Cannot set storage type to unkown\n", "");
+                ERROR("Cannot set storage type to unkown\n", __FILE__, __LINE__);
             }
             this->curr_type = type;
             if(did_init){
@@ -149,7 +138,7 @@ class matrix {
 
         __host__ __device__ bool is_diag(){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
             if(curr_type == DENSE){
                 for(size_t i = 0; i < nrows * ncols; i++){
@@ -158,7 +147,7 @@ class matrix {
                 }
                 return true;
             } else {
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
                 // TODO: Implement for CSR/CSC
             }
         }
@@ -176,8 +165,7 @@ class matrix {
             size_t ncols = 0
         ){
             if(location == UNKNOWN_LOCATION || curr_type == UNKNOWN_TYPE){
-                CU_ERROR("Attempt to initialize matrix with unknown storage location/type. \\
-                Please specify these using set_storage_location() and set_storage_type()\n", "");
+                ERROR("Attempt to initialize matrix with unknown storage location/type.\n", __FILE__, __LINE__);
             }
             
             this->nrows = nrows;
@@ -203,7 +191,7 @@ class matrix {
                 }
                 did_init = true;
             } else {
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
                 #if 0
                     // TODO: Finish implementing CSR/CSC init
                     // Cannot use map in device code
@@ -236,7 +224,7 @@ class matrix {
 
         __host__ void print(){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
             if(get_storage_type() == DENSE){
                 std::ostringstream oss;
@@ -259,9 +247,9 @@ class matrix {
                     }
                     oss << std::endl;
                 }
-                CU_PRINT(oss.str().c_str(), "");
+                DBG(oss.str().c_str(), "");
             } else {
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n", __FILE__, __LINE__);
             }
         }
 
