@@ -191,34 +191,43 @@ class matrix {
                 }
                 did_init = true;
             } else {
-                ERROR("Unsupported method\n", __FILE__, __LINE__);
-                #if 0
+                // ERROR("Unsupported method\n", __FILE__, __LINE__);
+                // #if 0
                     // TODO: Finish implementing CSR/CSC init
-                    // Cannot use map in device code
+                    size_t *indices = (curr_type == CSR) ? Aj : Ai;
+                    size_t vdim = (curr_type == CSR) ? nrows : ncols;
                     if(Ap != NULL){
-                        scrap((void**) &Ap); scrap((void**) &Aj); scrap((void**) &Ai); scrap((void**) &Ax);
+                        scrap((void**) &Ap);
+                        scrap((void**) &indices);
+                        scrap((void**) &Ax);
                     }
                     std::map<size_t, std::set<std::pair<size_t, T>>> ord;
 
                     for(size_t i = 0; i < nvals; i++){
-                        ord[rows[i]].insert({cols[i], entries[i]});
+                        size_t bucket = (curr_type == CSR) ? rows[i] : cols[i];
+                        size_t index = (curr_type == CSR) ? cols[i] : rows[i];
+                        ord[bucket].insert({index, entries[i]});
                     }
-                    
-                    Ap = new size_t[nrows + 1];
-                    Aj = new size_t[nvals];
-                    Ax = new size_t[nvals];
+
+                    Ap = (size_t*) allocate((vdim + 1) * sizeof(size_t));
+                    indices = (size_t*) allocate(nvals * sizeof(size_t));
+                    Ax = (T*) allocate(nvals * sizeof(T));
                     Ap[0] = 0;
                     int Ap_at = 1;
-                    int Ax_at;     
-                    for(auto &row : ord){
-                        int row_idx = row.first;
-                        int nvals_this_row = row.second.size();
-                        Ap[at] = Ap[at - 1] + nvals_this_row;
-                        for(auto &entry : row.second){
-
+                    int Ax_at = 0;  
+                    for(auto &vec : ord){
+                        int vec_idx = vec.first;
+                        int nvals_this_vec = vec.second.size();
+                        Ap[Ap_at] = Ap[Ap_at - 1] + nvals_this_vec;
+                        Ap_at++;
+                        for(auto &entry : vec.second){
+                            Aj[Ax_at] = entry.first;
+                            Ax[Ax_at] = entry.second;
+                            Ax_at++;
                         }
                     }
-                #endif
+                    did_init = true;
+                // #endif
             }
         }
 

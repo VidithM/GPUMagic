@@ -6,7 +6,7 @@ using MatrixType = double;
 int main(){
     matrix<MatrixType> *arr = NULL;
 
-    int N = 1'000;
+    int N = 100'000'000;
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<MatrixType> distr(1, 1000);

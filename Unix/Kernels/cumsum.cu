@@ -5,7 +5,7 @@ __global__ void cumsum_kernel_phase1(matrix<T> *res, matrix<T> *partial, matrix<
 {
     size_t n = arr->get_ncols();
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    ERROR("Dummy error when entering kernel phase1, tid: %d\n", __FILE__, __LINE__, tid);
+    // ERROR("Dummy error when entering kernel phase1, tid: %d\n", __FILE__, __LINE__, tid);
     int nthreads = partial->get_ncols();
     if(tid >= nthreads){ return; } 
     size_t len = *chunk_size;

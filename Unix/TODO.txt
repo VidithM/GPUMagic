@@ -1,0 +1,5 @@
+- Complete sparse functionality
+- Write a basic sparse kernel (possibly dot-product multiplication)
+- Do not have function implementations in headers, just the definitions. This will probably
+cut down compile time by a lot since the functions only need to be compiled once instead
+of everywhere they are included.
