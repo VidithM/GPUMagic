@@ -47,8 +47,9 @@ void cumsum (
     size_t block_size
 )
 {
-    assert(arr->get_storage_type() == DENSE);
-    assert(res != NULL);
+    ASSERT(arr->get_storage_type() == DENSE);
+    ASSERT(arr->is_init());
+    ASSERT(res != NULL);
 
     size_t nthreads = ((arr->get_ncols() + chunk_size - 1) / chunk_size);
     block_size = std::min(nthreads + (32 - (nthreads % 32)), block_size);

@@ -33,15 +33,15 @@ void matmul_dense (
     size_t block_dim_cols
 )
 {
-    assert(A->get_storage_type() == DENSE);
-    assert(B->get_storage_type() == DENSE);
+    ASSERT(A->is_init());
+    ASSERT(B->is_init());
 
-    assert(A->is_init());
-    assert(B->is_init());
+    ASSERT(A->get_storage_type() == DENSE);
+    ASSERT(B->get_storage_type() == DENSE);
 
-    assert(A->get_ncols() == B->get_nrows());
+    ASSERT(A->get_ncols() == B->get_nrows());
 
-    assert(res != NULL);
+    ASSERT(res != NULL);
 
     
     matrix<T> *d_A = to_gpu(A);

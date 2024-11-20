@@ -147,8 +147,37 @@ class matrix {
                 }
                 return true;
             } else {
-                ERROR("Unsupported method\n", __FILE__, __LINE__);
+                // ERROR("Unsupported method\n", __FILE__, __LINE__);
                 // TODO: Implement for CSR/CSC
+                if(curr_type == CSR){
+                    for(size_t i = 0; i < nrows; i++){
+                        size_t num_entries = Ap[i + 1] - Ap[i];
+                        if(num_entries > 1){
+                            return false;
+                        }
+                        if(num_entries == 0){
+                            continue;
+                        }
+                        if(Aj[Ap[i]] != i){
+                            return false;
+                        }
+                    }
+                    return true;
+                } else {
+                    for(size_t i = 0; i < ncols; i++){
+                        size_t num_entries = Ap[i + 1] - Ap[i];
+                        if(num_entries > 1){
+                            return false;
+                        }
+                        if(num_entries == 0){
+                            continue;
+                        }
+                        if(Ai[Ap[i]] != i){
+                            return false;
+                        }
+                    }
+                    return true;
+                }
             }
         }
 
@@ -167,7 +196,6 @@ class matrix {
             if(location == UNKNOWN_LOCATION || curr_type == UNKNOWN_TYPE){
                 ERROR("Attempt to initialize matrix with unknown storage location/type.\n", __FILE__, __LINE__);
             }
-            
             this->nrows = nrows;
             this->ncols = ncols;
             this->nvals = nvals;
@@ -179,11 +207,7 @@ class matrix {
                 Ab = (bool*) allocate(nrows * ncols * sizeof(bool));
                 Ax = (T*) allocate(nrows * ncols * sizeof(T));
 
-                if(location == CPU){
-                    memset(Ab, false, (nrows * ncols) * sizeof(bool));
-                } else {
-                    cudaMemset(Ab, false, (nrows * ncols) * sizeof(bool));
-                }
+                memset(Ab, false, (nrows * ncols) * sizeof(bool));
 
                 for(size_t i = 0; i < nvals; i++){
                     Ab[rows[i] * ncols + cols[i]] = true;
@@ -191,43 +215,56 @@ class matrix {
                 }
                 did_init = true;
             } else {
-                // ERROR("Unsupported method\n", __FILE__, __LINE__);
-                // #if 0
-                    // TODO: Finish implementing CSR/CSC init
-                    size_t *indices = (curr_type == CSR) ? Aj : Ai;
-                    size_t vdim = (curr_type == CSR) ? nrows : ncols;
-                    if(Ap != NULL){
-                        scrap((void**) &Ap);
-                        scrap((void**) &indices);
-                        scrap((void**) &Ax);
-                    }
-                    std::map<size_t, std::set<std::pair<size_t, T>>> ord;
+                size_t *indices = (curr_type == CSR) ? Aj : Ai;
+                size_t vdim = (curr_type == CSR) ? nrows : ncols;
+                
+                if(Ap != NULL){
+                    scrap((void**) &Ap);
+                    scrap((void**) &indices);
+                    scrap((void**) &Ax);
+                }
 
-                    for(size_t i = 0; i < nvals; i++){
-                        size_t bucket = (curr_type == CSR) ? rows[i] : cols[i];
-                        size_t index = (curr_type == CSR) ? cols[i] : rows[i];
-                        ord[bucket].insert({index, entries[i]});
-                    }
+                std::map<size_t, std::set<std::pair<size_t, T>>> ord;
 
-                    Ap = (size_t*) allocate((vdim + 1) * sizeof(size_t));
-                    indices = (size_t*) allocate(nvals * sizeof(size_t));
-                    Ax = (T*) allocate(nvals * sizeof(T));
-                    Ap[0] = 0;
-                    int Ap_at = 1;
-                    int Ax_at = 0;  
-                    for(auto &vec : ord){
-                        int vec_idx = vec.first;
-                        int nvals_this_vec = vec.second.size();
-                        Ap[Ap_at] = Ap[Ap_at - 1] + nvals_this_vec;
+                for(size_t i = 0; i < nvals; i++){
+                    size_t bucket = (curr_type == CSR) ? rows[i] : cols[i];
+                    size_t index = (curr_type == CSR) ? cols[i] : rows[i];
+                    ord[bucket].insert({index, entries[i]});
+                }
+                
+                Ap = (size_t*) allocate((vdim + 1) * sizeof(size_t));
+                for(int i = 0; i < vdim + 1; i++){
+                    Ap[i] = -1;
+                }
+                indices = (size_t*) allocate(nvals * sizeof(size_t));
+                Ax = (T*) allocate(nvals * sizeof(T));
+                int Ap_at = 0;
+                int Ap_put = 0;
+                int Ax_at = 0;
+                for(auto &vec : ord){
+                    int vec_idx = vec.first;
+                    int nvals_this_vec = vec.second.size();
+                    while(Ap_at <= vec_idx){
+                        Ap[Ap_at] = Ap_put;
                         Ap_at++;
-                        for(auto &entry : vec.second){
-                            Aj[Ax_at] = entry.first;
-                            Ax[Ax_at] = entry.second;
-                            Ax_at++;
-                        }
                     }
-                    did_init = true;
-                // #endif
+                    Ap_put += nvals_this_vec;
+                    for(auto &entry : vec.second){
+                        indices[Ax_at] = entry.first;
+                        Ax[Ax_at] = entry.second;
+                        Ax_at++;
+                    }
+                }
+                while(Ap_at <= vdim){
+                    Ap[Ap_at] = Ap_put;
+                    Ap_at++;
+                }
+                if(curr_type == CSR){
+                    Aj = indices;
+                } else {
+                    Ai = indices;
+                }
+                did_init = true;
             }
         }
 
@@ -235,7 +272,7 @@ class matrix {
             if(!did_init){
                 ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
             }
-            if(get_storage_type() == DENSE){
+            if(curr_type == DENSE){
                 std::ostringstream oss;
                 oss << "\nDENSE (" << nrows << "-by-" << ncols << ") MATRIX" << std::endl;
                 oss << "PATTERN: (Ab)" << std::endl;
@@ -258,7 +295,28 @@ class matrix {
                 }
                 DBG(oss.str().c_str(), "");
             } else {
-                ERROR("Unsupported method\n", __FILE__, __LINE__);
+                std::ostringstream oss;
+                std::string mat_type = (curr_type == CSR) ? "CSR" : "CSC";
+                std::string index_array_name = (curr_type == CSR) ? "Aj" : "Ai";
+                size_t *indices = (curr_type == CSR) ? Aj : Ai;
+                size_t vdim = (curr_type == CSR) ? nrows : ncols;
+                oss << "\n" << mat_type << " (" << nrows << "-by-" << ncols << ") MATRIX" << std::endl;
+                oss << "POINTER (Ap)" << std::endl;
+                for(int i = 0; i < vdim; i++){
+                    oss << Ap[i] << " ";
+                }
+                oss << std::endl;
+                oss << "INDICES (" << index_array_name << ")" << std::endl;
+                for(int i = 0; i < nvals; i++){
+                    oss << indices[i] << " ";
+                }
+                oss << std::endl;
+                oss << "ENTRIES (Ax)" << std::endl;
+                for(int i = 0; i < nvals; i++){
+                    oss << Ax[i] << " ";
+                }
+                oss << std::endl;
+                DBG(oss.str().c_str(), "");
             }
         }
 

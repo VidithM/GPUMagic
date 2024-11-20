@@ -18,6 +18,14 @@ void matmul_dense (
 );
 
 template <typename T>
+void matmul_rowscale (
+    matrix<T> **res,
+    matrix<T> *A,
+    matrix<T> *B,
+    size_t block_size
+);
+
+template <typename T>
 void cumsum (
     matrix<T> **res,
     matrix<T> *arr,
