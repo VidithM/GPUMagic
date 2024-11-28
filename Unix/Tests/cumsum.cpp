@@ -1,7 +1,7 @@
 #include "GPUMagic.h"
-#include <random>
 
 using MatrixType = double;
+#define eps 1
 
 int main(){
     matrix<MatrixType> *arr = NULL;
@@ -9,7 +9,8 @@ int main(){
     int N = 100'000'000;
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<MatrixType> distr(1, 1000);
+    // #if std::is_floati
+    DistrType<MatrixType> distr(1, 1000);
 
     size_t *arr_rows = new size_t[N];
     memset(arr_rows, 0, sizeof(arr_rows));
@@ -28,14 +29,21 @@ int main(){
 
     timer t;
 
-    DBG("GPU Time\n", "");
+    printf("GPU Time (span efficient)\n");
     matrix<MatrixType> *res = NULL;
     t.start();
-    cumsum(&res, arr, 1000, 512);
+    cumsum_span_efficient(&res, arr, 512);
     t.end();
-    // res->print();
 
-    DBG("CPU Time\n", "");
+    delete res;
+    res = NULL;
+
+    printf("GPU Time (basic)\n");
+    t.start();
+    cumsum(&res, arr, (1 << 18), 512);
+    t.end();
+
+    printf("CPU Time\n");
     t.start();
     matrix<MatrixType> *cpu_res = new matrix<MatrixType>(DENSE);
     // std::cout << "Passed here" << std::endl;
@@ -46,7 +54,14 @@ int main(){
         cpu_res->put(0, i, curr);
     }
     t.end();
-    
+
+    for(int i = 0; i < N; i++){
+        if(fabs(cpu_res->at(0, i) - res->at(0, i)) > 0.1) {
+            printf("Verification failed %d: Host: %0.5f, Device: %0.5f\n", i, cpu_res->at(0, i), res->at(0, i));
+            exit(-1);
+        }
+    }
+
     delete res;
     delete[] arr_rows;
     delete[] arr_cols;

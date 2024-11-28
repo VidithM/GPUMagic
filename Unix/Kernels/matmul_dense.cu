@@ -1,4 +1,5 @@
-#include "GPUMagic.h"
+#include "GPUMagic_internal.cuh"
+#include "matrix.cuh"
 
 template <typename T>
 __global__ void mult_kernel(matrix<T> *res, matrix<T> *A, matrix<T> *B)
@@ -71,7 +72,8 @@ void matmul_dense (
     gpu_del(d_B);
 }
 
+#define MAKE_PROTO(type) template void matmul_dense<type>(matrix<type> **res, matrix<type> *A, matrix<type> *B, size_t block_dim_rows, size_t block_dim_cols)
 
-template void matmul_dense<float>(matrix<float> **res, matrix<float> *A, matrix<float> *B, size_t block_dim_rows, size_t block_dim_cols);
-template void matmul_dense<double>(matrix<double> **res, matrix<double> *A, matrix<double> *B, size_t block_dim_rows, size_t block_dim_cols);
-template void matmul_dense<int>(matrix<int> **res, matrix<int> *A, matrix<int> *B, size_t block_dim_rows, size_t block_dim_cols);
+MAKE_PROTO(float);
+MAKE_PROTO(double);
+MAKE_PROTO(int);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.cuh"
+#include "GPUMagic_internal.cuh"
 #include <chrono>
 
 class timer_base {

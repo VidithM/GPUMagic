@@ -12,8 +12,8 @@ set ( CMAKE_POSITION_INDEPENDENT_CODE ON )
 
 set ( CUDA_KERNEL_SOURCES 
     Kernels/matmul_dense.cu
-    Kernels/matmul_rowscale.cu
     Kernels/cumsum.cu
+    Kernels/cumsum_span_efficient.cu
     Utils/matrix.cu
     Utils/timer.cu
 )
