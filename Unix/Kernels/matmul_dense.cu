@@ -1,4 +1,5 @@
-#include "GPUMagic.h"
+#include "GPUMagic_internal.cuh"
+#include "matrix.cuh"
 
 template <typename T>
 __global__ void mult_kernel(matrix<T> *res, matrix<T> *A, matrix<T> *B)
@@ -33,15 +34,15 @@ void matmul_dense (
     size_t block_dim_cols
 )
 {
-    assert(A->get_storage_type() == DENSE);
-    assert(B->get_storage_type() == DENSE);
+    ASSERT(A->is_init());
+    ASSERT(B->is_init());
 
-    assert(A->is_init());
-    assert(B->is_init());
+    ASSERT(A->get_storage_type() == DENSE);
+    ASSERT(B->get_storage_type() == DENSE);
 
-    assert(A->get_ncols() == B->get_nrows());
+    ASSERT(A->get_ncols() == B->get_nrows());
 
-    assert(res != NULL);
+    ASSERT(res != NULL);
 
     
     matrix<T> *d_A = to_gpu(A);
@@ -50,7 +51,7 @@ void matmul_dense (
     size_t res_nrows = A->get_nrows();
     size_t res_ncols = B->get_ncols();
 
-    matrix<T> *h_res = new matrix<T>(DENSE, CPU);
+    matrix<T> *h_res = new matrix<T>(DENSE);
     h_res->init(NULL, NULL, NULL, 0, res_nrows, res_ncols);
     matrix<T> *d_res = to_gpu(h_res);
     delete h_res; h_res = NULL;
@@ -71,7 +72,8 @@ void matmul_dense (
     gpu_del(d_B);
 }
 
+#define MAKE_PROTO(type) template void matmul_dense<type>(matrix<type> **res, matrix<type> *A, matrix<type> *B, size_t block_dim_rows, size_t block_dim_cols)
 
-template void matmul_dense<float>(matrix<float> **res, matrix<float> *A, matrix<float> *B, size_t block_dim_rows, size_t block_dim_cols);
-template void matmul_dense<double>(matrix<double> **res, matrix<double> *A, matrix<double> *B, size_t block_dim_rows, size_t block_dim_cols);
-template void matmul_dense<int>(matrix<int> **res, matrix<int> *A, matrix<int> *B, size_t block_dim_rows, size_t block_dim_cols);
+MAKE_PROTO(float);
+MAKE_PROTO(double);
+MAKE_PROTO(int);

@@ -3,13 +3,13 @@
 template <typename T>
 __host__ matrix<T>* to_gpu(matrix<T> *mat){
     if(mat->get_storage_location() == GPU){
-        CU_ERROR("Attempt to call to_gpu() with a GPU stored matrix\n", "");
+        ERROR("Attempt to call to_gpu() with a GPU stored matrix\n", __FILE__, __LINE__);
     }
     if(!mat->is_init()){
-        CU_ERROR("Attempt to use uninitialized matrix\n", "");
+        ERROR("Attempt to use uninitialized matrix\n", __FILE__, __LINE__);
     }
     T *d_Ax;
-    size_t *d_Ap, *d_Ai, *d_Aj;
+    // size_t *d_Ap, *d_Ai, *d_Aj;
     bool *d_Ab;
     if(mat->get_storage_type() == DENSE){
         size_t nrows = mat->nrows;
@@ -21,7 +21,7 @@ __host__ matrix<T>* to_gpu(matrix<T> *mat){
         cudaMemcpy(d_Ax, mat->Ax, nrows * ncols * sizeof(T), cudaMemcpyHostToDevice);
         cudaMemcpy(d_Ab, mat->Ab, nrows * ncols * sizeof(bool), cudaMemcpyHostToDevice);
 
-        matrix<T> d_mat_proto(DENSE, GPU);
+        matrix<T> d_mat_proto(DENSE);
         memcpy(&d_mat_proto, mat, sizeof(matrix<T>));
         d_mat_proto.Ax = d_Ax;
         d_mat_proto.Ab = d_Ab;
@@ -42,8 +42,9 @@ __host__ matrix<T>* to_gpu(matrix<T> *mat){
 
     } else {
         // TODO: Implement this
-        CU_ERROR("Unsupported method\n", "");
+        ERROR("Unsupported method\n", __FILE__, __LINE__);
     }
+    return NULL;
 }
 
 template <typename T>
@@ -51,11 +52,11 @@ __host__ matrix<T>* to_cpu(matrix<T> *d_mat){
     // cudaMemcpy d_mat from device to host, then the host can examine its contents
     // then, cudaMemcpy the arrays to the host
     // build host matrix and return
-    matrix<T> *h_mat = new matrix<T>(DENSE, CPU);
+    matrix<T> *h_mat = new matrix<T>(DENSE);
     cudaMemcpy(h_mat, d_mat, sizeof(matrix<T>), cudaMemcpyDeviceToHost);
     h_mat->location = CPU;
     T *h_Ax;
-    size_t *h_Ap, *h_Ai, *h_Aj;
+    // size_t *h_Ap, *h_Ai, *h_Aj;
     bool *h_Ab;
     if(h_mat->get_storage_type() == DENSE){
         size_t nrows = h_mat->nrows;
@@ -74,14 +75,15 @@ __host__ matrix<T>* to_cpu(matrix<T> *d_mat){
         return h_mat;
     } else {
         delete h_mat;
-        CU_ERROR("Unsupported method\n", "");
+        ERROR("Unsupported method\n", __FILE__, __LINE__);
     }
+    return NULL;
 }
 
 template <typename T>
 __host__ void gpu_del(matrix<T> *d_mat){
     // similar to to_cpu, but deallocate instead
-    matrix<T> h_mat(DENSE, CPU);
+    matrix<T> h_mat(DENSE);
     cudaMemcpy(&h_mat, d_mat, sizeof(matrix<T>), cudaMemcpyDeviceToHost);
 
     cudaFree(h_mat.Ax);

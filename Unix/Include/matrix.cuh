@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.cuh"
+#include "GPUMagic_internal.cuh"
 
 #include <map>
 #include <set>
@@ -22,37 +22,26 @@ class matrix {
         size_t nrows, ncols, nvals;
         bool did_init;
 
-        __host__ __device__ void* allocate(int nbytes){
+        __host__ void* allocate(int nbytes){
             if(location == UNKNOWN_LOCATION){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if(location == CPU){
-                return malloc(nbytes);
-            } else {
-                void *res = NULL;
-                cudaMalloc(&res, nbytes);
-                return res;
-            }
+            return malloc(nbytes);
         }
 
-        __host__ __device__ void scrap(void **block){
+        __host__ void scrap(void **block){
             if(location == UNKNOWN_LOCATION){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if(location == CPU){
-                free(*block);
-                *block = NULL;
-            } else {
-                cudaFree(*block);
-                *block = NULL;
-            }
+            free(*block);
+            *block = NULL;
         }
 
     public:
         matrix() = delete;
-        __host__ __device__ matrix(storage_type type, storage_location location) : Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {
+        __host__ matrix(storage_type type) : did_init(false), Ap(NULL), Ai(NULL), Aj(NULL), Ab(NULL), Ax(NULL) {
             this->curr_type = type;
-            this->location = location;
+            this->location = CPU;
         }
         __host__ ~matrix() {
             if(!did_init){
@@ -68,70 +57,70 @@ class matrix {
 
         __host__ __device__ bool exists(size_t row, size_t col){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access: tried (%ld, %ld) for dim (%ld, %ld)\n", row, col, nrows, ncols);
             }
             if(curr_type == DENSE){
                 return Ab[row * ncols + col];
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n");
             }
             return false;
         }
 
         __host__ __device__ T at(size_t row, size_t col){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access: tried (%ld, %ld) for dim (%ld, %ld)\n", row, col, nrows, ncols);
             }
             if(curr_type == DENSE){
                 return Ax[row * ncols + col];
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n");
             }
             return Ax[0];
         }
 
         __host__ __device__ void put(size_t row, size_t col, T val){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access: tried (%ld, %ld) for dim (%ld, %ld)\n", row, col, nrows, ncols);
             }
             if(curr_type == DENSE){
                 Ax[row * ncols + col] = val;
                 Ab[row * ncols + col] = true;
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n");
             }
         }
 
         __host__ __device__ void del(size_t row, size_t col){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if((row >= nrows || col >= ncols) || (row < 0 || col < 0)){
-                CU_ERROR("Out of bounds matrix access\n", "");
+            if(row >= nrows || col >= ncols){
+                ERROR("Out of bounds matrix access: tried (%ld, %ld) for dim (%ld, %ld)\n", row, col, nrows, ncols);
             }
             if(curr_type == DENSE){
                 Ab[row * ncols + col] = false;
             } else {
                 // TODO: Implement this
-                CU_ERROR("Unsupported method\n", "");
+                ERROR("Unsupported method\n");
             }
         }
 
         __host__ __device__ void set_storage_type(storage_type type){
             if(type == UNKNOWN_TYPE){
-                CU_ERROR("Cannot set storage type to unkown\n", "");
+                ERROR("Cannot set storage type to unkown\n");
             }
             this->curr_type = type;
             if(did_init){
@@ -149,7 +138,7 @@ class matrix {
 
         __host__ __device__ bool is_diag(){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
             if(curr_type == DENSE){
                 for(size_t i = 0; i < nrows * ncols; i++){
@@ -158,8 +147,37 @@ class matrix {
                 }
                 return true;
             } else {
-                CU_ERROR("Unsupported method\n", "");
+                // ERROR("Unsupported method\n");
                 // TODO: Implement for CSR/CSC
+                if(curr_type == CSR){
+                    for(size_t i = 0; i < nrows; i++){
+                        size_t num_entries = Ap[i + 1] - Ap[i];
+                        if(num_entries > 1){
+                            return false;
+                        }
+                        if(num_entries == 0){
+                            continue;
+                        }
+                        if(Aj[Ap[i]] != i){
+                            return false;
+                        }
+                    }
+                    return true;
+                } else {
+                    for(size_t i = 0; i < ncols; i++){
+                        size_t num_entries = Ap[i + 1] - Ap[i];
+                        if(num_entries > 1){
+                            return false;
+                        }
+                        if(num_entries == 0){
+                            continue;
+                        }
+                        if(Ai[Ap[i]] != i){
+                            return false;
+                        }
+                    }
+                    return true;
+                }
             }
         }
 
@@ -176,10 +194,8 @@ class matrix {
             size_t ncols = 0
         ){
             if(location == UNKNOWN_LOCATION || curr_type == UNKNOWN_TYPE){
-                CU_ERROR("Attempt to initialize matrix with unknown storage location/type. \\
-                Please specify these using set_storage_location() and set_storage_type()\n", "");
+                ERROR("Attempt to initialize matrix with unknown storage location/type.\n");
             }
-            
             this->nrows = nrows;
             this->ncols = ncols;
             this->nvals = nvals;
@@ -191,11 +207,7 @@ class matrix {
                 Ab = (bool*) allocate(nrows * ncols * sizeof(bool));
                 Ax = (T*) allocate(nrows * ncols * sizeof(T));
 
-                if(location == CPU){
-                    memset(Ab, false, (nrows * ncols) * sizeof(bool));
-                } else {
-                    cudaMemset(Ab, false, (nrows * ncols) * sizeof(bool));
-                }
+                memset(Ab, false, (nrows * ncols) * sizeof(bool));
 
                 for(size_t i = 0; i < nvals; i++){
                     Ab[rows[i] * ncols + cols[i]] = true;
@@ -203,42 +215,64 @@ class matrix {
                 }
                 did_init = true;
             } else {
-                CU_ERROR("Unsupported method\n", "");
-                #if 0
-                    // TODO: Finish implementing CSR/CSC init
-                    // Cannot use map in device code
-                    if(Ap != NULL){
-                        scrap((void**) &Ap); scrap((void**) &Aj); scrap((void**) &Ai); scrap((void**) &Ax);
-                    }
-                    std::map<size_t, std::set<std::pair<size_t, T>>> ord;
+                size_t *indices = (curr_type == CSR) ? Aj : Ai;
+                size_t vdim = (curr_type == CSR) ? nrows : ncols;
+                
+                if(Ap != NULL){
+                    scrap((void**) &Ap);
+                    scrap((void**) &indices);
+                    scrap((void**) &Ax);
+                }
 
-                    for(size_t i = 0; i < nvals; i++){
-                        ord[rows[i]].insert({cols[i], entries[i]});
-                    }
-                    
-                    Ap = new size_t[nrows + 1];
-                    Aj = new size_t[nvals];
-                    Ax = new size_t[nvals];
-                    Ap[0] = 0;
-                    int Ap_at = 1;
-                    int Ax_at;     
-                    for(auto &row : ord){
-                        int row_idx = row.first;
-                        int nvals_this_row = row.second.size();
-                        Ap[at] = Ap[at - 1] + nvals_this_row;
-                        for(auto &entry : row.second){
+                std::map<size_t, std::set<std::pair<size_t, T>>> ord;
 
-                        }
+                for(size_t i = 0; i < nvals; i++){
+                    size_t bucket = (curr_type == CSR) ? rows[i] : cols[i];
+                    size_t index = (curr_type == CSR) ? cols[i] : rows[i];
+                    ord[bucket].insert({index, entries[i]});
+                }
+                
+                Ap = (size_t*) allocate((vdim + 1) * sizeof(size_t));
+                for(int i = 0; i < vdim + 1; i++){
+                    Ap[i] = -1;
+                }
+                indices = (size_t*) allocate(nvals * sizeof(size_t));
+                Ax = (T*) allocate(nvals * sizeof(T));
+                int Ap_at = 0;
+                int Ap_put = 0;
+                int Ax_at = 0;
+                for(auto &vec : ord){
+                    int vec_idx = vec.first;
+                    int nvals_this_vec = vec.second.size();
+                    while(Ap_at <= vec_idx){
+                        Ap[Ap_at] = Ap_put;
+                        Ap_at++;
                     }
-                #endif
+                    Ap_put += nvals_this_vec;
+                    for(auto &entry : vec.second){
+                        indices[Ax_at] = entry.first;
+                        Ax[Ax_at] = entry.second;
+                        Ax_at++;
+                    }
+                }
+                while(Ap_at <= vdim){
+                    Ap[Ap_at] = Ap_put;
+                    Ap_at++;
+                }
+                if(curr_type == CSR){
+                    Aj = indices;
+                } else {
+                    Ai = indices;
+                }
+                did_init = true;
             }
         }
 
         __host__ void print(){
             if(!did_init){
-                CU_ERROR("Attempt to use uninitialized matrix\n", "");
+                ERROR("Attempt to use uninitialized matrix\n");
             }
-            if(get_storage_type() == DENSE){
+            if(curr_type == DENSE){
                 std::ostringstream oss;
                 oss << "\nDENSE (" << nrows << "-by-" << ncols << ") MATRIX" << std::endl;
                 oss << "PATTERN: (Ab)" << std::endl;
@@ -259,9 +293,30 @@ class matrix {
                     }
                     oss << std::endl;
                 }
-                CU_PRINT(oss.str().c_str(), "");
+                DBG(oss.str().c_str(), "");
             } else {
-                CU_ERROR("Unsupported method\n", "");
+                std::ostringstream oss;
+                std::string mat_type = (curr_type == CSR) ? "CSR" : "CSC";
+                std::string index_array_name = (curr_type == CSR) ? "Aj" : "Ai";
+                size_t *indices = (curr_type == CSR) ? Aj : Ai;
+                size_t vdim = (curr_type == CSR) ? nrows : ncols;
+                oss << "\n" << mat_type << " (" << nrows << "-by-" << ncols << ") MATRIX" << std::endl;
+                oss << "POINTER (Ap)" << std::endl;
+                for(int i = 0; i < vdim; i++){
+                    oss << Ap[i] << " ";
+                }
+                oss << std::endl;
+                oss << "INDICES (" << index_array_name << ")" << std::endl;
+                for(int i = 0; i < nvals; i++){
+                    oss << indices[i] << " ";
+                }
+                oss << std::endl;
+                oss << "ENTRIES (Ax)" << std::endl;
+                for(int i = 0; i < nvals; i++){
+                    oss << Ax[i] << " ";
+                }
+                oss << std::endl;
+                DBG(oss.str().c_str(), "");
             }
         }
 
